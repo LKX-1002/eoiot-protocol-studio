@@ -1,17 +1,22 @@
 import type { Diagnostic, ParsedField } from "./types";
 
-/** 将用户输入清洗成字节数组，并拒绝不完整或非法的 HEX 字节。 */
+/**
+ * 将用户输入清洗成字节数组。
+ * 同时支持连续 HEX、两位一组 HEX、0x 前缀，以及空格/换行/逗号等分隔符。
+ */
 export function parseHex(input: string): number[] {
-  const normalized = input
+  const compact = input
     .replace(/0x/gi, "")
-    .replace(/[，,;；\s]+/g, " ")
-    .trim();
-  if (!normalized) return [];
-  const tokens = normalized.split(" ").filter(Boolean);
-  if (tokens.some((token) => !/^[0-9a-fA-F]{2}$/.test(token))) {
-    throw new Error("HEX 报文中存在非两位十六进制字节。");
+    .replace(/[，,;；:_\-\s]+/g, "");
+  if (!compact) return [];
+  const invalid = compact.match(/[^0-9a-fA-F]/);
+  if (invalid) {
+    throw new Error(`HEX 报文包含非法字符“${invalid[0]}”。`);
   }
-  return tokens.map((token) => Number.parseInt(token, 16));
+  if (compact.length % 2 !== 0) {
+    throw new Error(`HEX 字符数量为奇数（${compact.length}），末尾缺少半个字节。`);
+  }
+  return compact.match(/.{2}/g)?.map((token) => Number.parseInt(token, 16)) ?? [];
 }
 
 /** 把单字节格式化为两位大写 HEX。 */
@@ -48,6 +53,26 @@ export function field(
 /** 查找协议帧起始符；前导 FE 唤醒字节会被自然跳过。 */
 export function findFrameStart(bytes: number[]): number {
   return bytes.findIndex((value) => value === 0x68);
+}
+
+/**
+ * 严格检查通用 68 帧的前导字节、结束符和累加和。
+ * 与结果页的 diagnostics 不同，这里用于阻止错误报文进入业务解析。
+ */
+export function validateFrameEnvelope(bytes: number[], start: number): void {
+  if (start < 0) throw new Error("帧结构错误：未找到起始符 68。");
+  if (bytes.slice(0, start).some((value) => value !== 0xfe)) {
+    throw new Error("帧结构错误：起始符 68 前只能包含唤醒字节 FE。");
+  }
+  if (bytes.length - start < 14) throw new Error("帧长度不足：报文尚未接收完整。");
+  if (bytes.at(-1) !== 0x16) throw new Error("帧结构错误：最后一个字节必须是结束符 16。");
+
+  const checksumOffset = bytes.length - 2;
+  const expected = bytes[checksumOffset];
+  const calculated = bytes.slice(start, checksumOffset).reduce((sum, value) => (sum + value) & 0xff, 0);
+  if (expected !== calculated) {
+    throw new Error(`校验和错误：帧内 CS 为 ${hexByte(expected)}，正确值应为 ${hexByte(calculated)}。`);
+  }
 }
 
 /** 按指定端序读取无符号整数，支持超过 4 字节的数据。 */
@@ -124,8 +149,9 @@ export function checksumDiagnostics(bytes: number[], start: number): Diagnostic[
 /** 把倒序 BCD 时间转为界面可读格式。 */
 export function parseReverseBcdTime(bytes: number[], century = "20"): string {
   const digits = [...bytes].reverse().map(hexByte).join("");
-  if (!/^\d{10}$/.test(digits)) return "—";
-  const full = `${century}${digits}`;
+  // 5 字节通常省略世纪，6 字节则已经包含完整四位年份。
+  if (!/^\d{10}(\d{2})?$/.test(digits)) return "—";
+  const full = digits.length === 12 ? digits : `${century}${digits}`;
   return `${full.slice(0, 4)}-${full.slice(4, 6)}-${full.slice(6, 8)} ${full.slice(8, 10)}:${full.slice(10, 12)}`;
 }
 

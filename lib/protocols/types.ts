@@ -68,5 +68,10 @@ export interface ProtocolParser {
   category: ParseResult["category"];
   status: "ready" | "beta";
   detect(bytes: number[], options?: ParseOptions): number;
+  /**
+   * 在进入业务字段解析前执行严格校验。
+   * 结构、长度、边界或校验和错误时必须抛出可直接展示给用户的错误。
+   */
+  validate(bytes: number[], options?: ParseOptions): void;
   parse(bytes: number[], options?: ParseOptions): ParseResult;
 }

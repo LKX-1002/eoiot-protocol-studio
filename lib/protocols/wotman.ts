@@ -12,8 +12,10 @@ import {
   parseReverseBcdTime,
   safeSlice,
   uint,
+  validateFrameEnvelope,
 } from "./bytes";
 import type { Diagnostic, HistoryItem, ParseOptions, ParseResult, ProtocolParser } from "./types";
+import { getWaterMeterType } from "./meter-types";
 
 /** 三个告警字节由高位到低位对应的业务含义，内容来自原 Java 源码。 */
 const WARNINGS = [
@@ -259,6 +261,27 @@ export const wotmanParser: ProtocolParser = {
     if ([0x81, 0x01].includes(bytes[controlOffset])) score += 5;
     if (bytes.at(-1) === 0x16) score += 10;
     return Math.min(score, 100);
+  },
+  /** 校验沃特曼公共帧头、总长度和已接入的数据标识。 */
+  validate(bytes, options = {}) {
+    const start = findFrameStart(bytes);
+    validateFrameEnvelope(bytes, start);
+    if (!getWaterMeterType(bytes[start + 1])) {
+      throw new Error(`仪表类型错误：${hexByte(bytes[start + 1] ?? 0)}H 不属于水表类型 10H–19H。`);
+    }
+    const controlOffset = start + 9;
+    if (![0x81, 0x01].includes(bytes[controlOffset])) {
+      throw new Error(`控制码错误：暂不支持 ${hexByte(bytes[controlOffset] ?? 0)}H。`);
+    }
+    const dataIdentifier = hex(safeSlice(bytes, controlOffset + 3, 2)).replace(" ", "");
+    if (!["9021", "9023", "9025"].includes(dataIdentifier)) {
+      throw new Error(`数据标识错误：暂不支持 ${dataIdentifier || "未知"}。`);
+    }
+    const frameLength = uint(safeSlice(bytes, controlOffset + 1, 2), options.intEndian === "le" ? "le" : "be");
+    const actualLength = bytes.length - start;
+    if (frameLength !== actualLength) {
+      throw new Error(`长度字段错误：声明 ${frameLength} Bytes，实际帧长 ${actualLength} Bytes。`);
+    }
   },
   /** 解析大口径水表公共帧头，再分派到具体 DI 解析函数。 */
   parse(bytes, options = {}) {

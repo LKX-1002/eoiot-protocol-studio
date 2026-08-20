@@ -6,8 +6,10 @@ import {
   formatNumber,
   hexByte,
   meterAddress,
+  validateFrameEnvelope,
 } from "./bytes";
 import type { ParseOptions, ParseResult, ProtocolParser } from "./types";
+import { getWaterMeterType } from "./meter-types";
 
 const UNIT_DIVISORS: Record<number, { divisor: number; label: string }> = {
   0x29: { divisor: 10, label: "m³" },
@@ -37,16 +39,48 @@ export const cjt188Parser: ProtocolParser = {
   name: "CJ/T 188 小口径水表",
   category: "water",
   status: "ready",
-  /** 根据帧头、仪表类型、控制码、结束符和单位字节计算匹配度。 */
+  /** 根据完整结构计算匹配度；标准样例通过全部关键特征时为 100%。 */
   detect(bytes) {
     const start = findFrameStart(bytes);
     if (start < 0) return 0;
-    let score = 35;
-    if (bytes[start + 1] === 0x10) score += 20;
-    if ([0x01, 0x81, 0x04, 0x84].includes(bytes[start + 9])) score += 20;
-    if (bytes.at(-1) === 0x16) score += 15;
-    if (bytes.slice(start + 11, start + 17).some((value) => UNIT_DIVISORS[value])) score += 10;
+    let score = 25;
+    if (getWaterMeterType(bytes[start + 1])) score += 25;
+    if ([0x01, 0x81, 0x04, 0x84].includes(bytes[start + 9])) score += 15;
+    // 不把匹配度绑定到单一 DI；不同水表会返回 901F、9020 等合法数据标识。
+    if (bytes.length > start + 12) score += 15;
+    if (bytes.at(-1) === 0x16) score += 10;
+    const reading = locateReading(bytes, start + 9);
+    if (UNIT_DIVISORS[bytes[reading.unitOffset]]) score += 10;
     return Math.min(score, 100);
+  },
+  /** 错误帧在字段解析前直接拒绝，避免用默认值伪装成有效读数。 */
+  validate(bytes) {
+    const start = findFrameStart(bytes);
+    validateFrameEnvelope(bytes, start);
+    const meterType = getWaterMeterType(bytes[start + 1]);
+    if (!meterType) throw new Error(`仪表类型错误：${hexByte(bytes[start + 1] ?? 0)}H 不属于水表类型 10H–19H。`);
+    if (![0x01, 0x81, 0x04, 0x84].includes(bytes[start + 9])) {
+      throw new Error(`控制码错误：暂不支持 ${hexByte(bytes[start + 9] ?? 0)}H。`);
+    }
+
+    const declaredLength = bytes[start + 10];
+    // 固定区 11B + DATA(L) + CS 1B，随后才是结束符 16。
+    const expectedEndOffset = start + 12 + declaredLength;
+    if (expectedEndOffset !== bytes.length - 1) {
+      const actualLength = Math.max(0, bytes.length - start - 13);
+      throw new Error(`长度字段错误：声明 ${declaredLength} Bytes，按当前帧实际为 ${actualLength} Bytes。`);
+    }
+
+    const address = bytes.slice(start + 2, start + 9);
+    if (address.some((value) => (value & 0x0f) > 9 || (value >> 4) > 9)) {
+      throw new Error("表地址错误：地址字段不是有效的 BCD 编码。");
+    }
+
+    const reading = locateReading(bytes, start + 9);
+    if (!UNIT_DIVISORS[bytes[reading.unitOffset]]) throw new Error("数据区错误：未找到支持的累计流量单位。");
+    if (bcdLittleEndian(bytes.slice(reading.offset, reading.offset + 4), 2) === null) {
+      throw new Error("数据区错误：累计流量不是有效的 BCD 编码。");
+    }
   },
   /** 解析 CJ/T 188 通用小口径水表读数响应。 */
   parse(bytes: number[], _options?: ParseOptions): ParseResult {
@@ -54,6 +88,8 @@ export const cjt188Parser: ProtocolParser = {
     if (start < 0) throw new Error("不是有效的 CJ/T 188 报文：缺少起始符 68。");
     // 帧结构：68 + 仪表类型 1B + 地址 7B + 控制码。
     const controlOffset = start + 9;
+    const meterType = getWaterMeterType(bytes[start + 1]);
+    if (!meterType) throw new Error("无法解析仪表类型：当前类型不属于水表协议。");
     const control = bytes[controlOffset] ?? 0;
     const length = bytes[controlOffset + 1] ?? Math.max(0, bytes.length - controlOffset - 4);
     const diOffset = controlOffset + 2;
@@ -77,7 +113,7 @@ export const cjt188Parser: ProtocolParser = {
     // fields 同时用于字段表格和字节地图着色。
     const fields = [
       field(bytes, start, 1, "帧起始符", "68", { tone: "header" }),
-      field(bytes, start + 1, 1, "仪表类型", "水表", { note: "10H", tone: "meta" }),
+      field(bytes, start + 1, 1, "仪表类型", meterType.label, { note: meterType.reserved ? `${meterType.codeLabel}，标准保留码` : meterType.codeLabel, tone: "meta" }),
       field(bytes, start + 2, 7, "表地址", meterAddress(bytes, start), { note: "低字节在前", tone: "meta" }),
       field(bytes, controlOffset, 1, "控制码", hexByte(control), { tone: "header" }),
       field(bytes, controlOffset + 1, 1, "数据长度", `${length} Bytes`, { tone: "meta" }),
@@ -88,7 +124,7 @@ export const cjt188Parser: ProtocolParser = {
     ];
 
     return {
-      protocol: this.name,
+      protocol: `CJ/T 188 ${meterType.label}`,
       protocolId: this.id,
       category: "water",
       categoryLabel: "水表协议",
@@ -99,7 +135,7 @@ export const cjt188Parser: ProtocolParser = {
       dataIdentifier,
       dataLength: length,
       coreValue: total === null ? "无法识别" : `${formatNumber(total, 3)} m³`,
-      metrics: { totalFlow: total, valveStatus, meterType: "10H", unit: unitInfo.label },
+      metrics: { totalFlow: total, valveStatus, meterType: `${meterType.label} · ${meterType.codeLabel}`, unit: unitInfo.label },
       fields,
       diagnostics,
       history: [],
