@@ -155,8 +155,14 @@ body {
 /* 深色 HEX 编辑器在两种页面主题下都维持开发工具视觉。 */
 .hex-editor { border: 1px solid var(--editor-line); border-radius: 11px; overflow: hidden; background: var(--editor); box-shadow: inset 0 1px 0 rgba(255,255,255,.04); }
 .hex-editor.has-error { border-color: var(--danger); }
-.editor-toolbar { min-height: 36px; padding: 0 11px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--editor-line); color: var(--editor-muted); font-size: 9px; letter-spacing: .08em; }
-.editor-toolbar button { border: 0; background: transparent; color: var(--editor-accent); padding: 5px; font-size: 9px; }
+.editor-toolbar { min-height: 40px; padding: 0 10px 0 13px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--editor-line); background: color-mix(in srgb, var(--editor) 88%, var(--panel)); color: var(--editor-muted); font-size: 9px; letter-spacing: .08em; }
+.editor-label, .json-toolbar > span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.tool-icon { width: 14px; height: 14px; flex: 0 0 auto; }
+.tool-actions { display: flex; align-items: center; gap: 5px; }
+.tool-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; min-width: 66px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--editor-muted); padding: 0 9px; font-size: 9px; letter-spacing: 0; transition: color .16s ease, background .16s ease, border-color .16s ease, transform .16s ease; }
+.tool-actions button:hover { border-color: var(--editor-line); background: rgba(255,255,255,.055); color: var(--editor-ink); }
+.tool-actions button:active { transform: translateY(1px); }
+.tool-actions button.is-success { border-color: color-mix(in srgb, var(--brand) 38%, transparent); background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); }
 .editor-main { display: grid; grid-template-columns: 36px minmax(0,1fr); }
 .line-numbers { padding: 13px 8px; border-right: 1px solid var(--editor-line); color: var(--editor-muted); text-align: right; font-family: Consolas, "SFMono-Regular", monospace; font-size: 10px; line-height: 1.75; user-select: none; }
 .editor-main textarea { width: 100%; min-height: 254px; resize: vertical; border: 0; outline: 0; padding: 13px; background: transparent; color: var(--editor-ink); font-family: Consolas, "SFMono-Regular", monospace; font-size: 11px; line-height: 1.75; letter-spacing: .02em; }
@@ -240,9 +246,9 @@ td strong { font-weight: 500; }
 .diag-ok > span { color: var(--brand); background: var(--brand-soft); }
 .diag-warn > span { color: var(--warning); background: var(--warning-soft); }
 .diag-bad > span { color: var(--danger); background: var(--danger-soft); }
-.json-view { position: relative; }
-.json-view button { position: absolute; right: 8px; top: 8px; border: 1px solid var(--editor-line); border-radius: 7px; padding: 5px 7px; background: transparent; color: var(--editor-accent); font-size: 9px; }
-.json-view pre { max-height: 330px; margin: 0; overflow: auto; border-radius: 10px; padding: 13px; background: var(--editor); color: var(--editor-ink); font-family: Consolas, "SFMono-Regular", monospace; font-size: 9px; line-height: 1.6; }
+.json-view { overflow: hidden; border: 1px solid var(--editor-line); border-radius: 11px; background: var(--editor); }
+.json-toolbar { min-height: 40px; padding: 0 10px 0 13px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--editor-line); color: var(--editor-muted); font-size: 9px; letter-spacing: .06em; }
+.json-view pre { max-height: 330px; margin: 0; overflow: auto; padding: 13px; background: var(--editor); color: var(--editor-ink); font-family: Consolas, "SFMono-Regular", monospace; font-size: 9px; line-height: 1.6; }
 
 /* 窄屏平板才折叠侧栏；电脑端始终保留完整导航名称。 */
 @media (max-width: 900px) {
@@ -345,10 +351,9 @@ td strong { font-weight: 500; }
 .form-grid label { gap: 7px; font-size: 12px; }
 .form-grid select { min-height: 42px; padding: 0 12px; font-size: 13px; }
 .hex-editor { border-radius: 13px; }
-.editor-toolbar { min-height: 43px; padding: 0 14px; font-size: 10px; }
-.editor-toolbar > div { display: flex; gap: 3px; }
-.editor-toolbar button { padding: 7px 8px; font-size: 11px; letter-spacing: 0; border-radius: 6px; }
-.editor-toolbar button:hover { background: rgba(255,255,255,.06); }
+.editor-toolbar { min-height: 48px; padding: 0 12px 0 15px; font-size: 10px; }
+.editor-toolbar .tool-actions button { min-height: 32px; min-width: 60px; padding: 0 7px; font-size: 10px; white-space: nowrap; }
+.editor-toolbar .tool-actions .tool-icon { width: 13px; height: 13px; }
 .editor-main { display: block; }
 .editor-main textarea { min-height: 330px; padding: 17px; font-size: 13px; line-height: 1.85; }
 .editor-status { min-height: 38px; padding: 0 14px; font-size: 10px; }
@@ -385,6 +390,13 @@ td strong { font-weight: 500; }
 .metric-grid article { padding: 14px; border-radius: 11px; }
 .metric-grid span { font-size: 10px; }
 .metric-grid strong { font-size: 14px; }
+.auto-recognition { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); }
+.auto-recognition .secure-dot { flex: 0 0 auto; margin-top: 4px; }
+.auto-recognition strong { display: block; margin-bottom: 3px; color: var(--ink); font-size: 12px; }
+.auto-recognition p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.overview-sections { display: grid; gap: 16px; }
+.overview-group h3 { margin: 0 0 9px; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.overview-group .metric-grid article small { display: block; margin-top: 6px; color: var(--muted); font-size: 9px; line-height: 1.4; }
 table { font-size: 11px; }
 th { padding: 10px 8px; }
 td { padding: 11px 8px; }
@@ -397,8 +409,8 @@ tbody tr.is-selected { background: var(--brand-soft); }
 .diagnostic-list article { padding: 12px; }
 .diagnostic-list strong { font-size: 11px; }
 .diagnostic-list p { font-size: 10px; }
-.json-view > div { position: absolute; z-index: 2; right: 10px; top: 10px; display: flex; gap: 6px; }
-.json-view button { position: static; font-size: 10px; }
+.json-toolbar { min-height: 48px; padding: 0 12px 0 15px; font-size: 10px; }
+.json-toolbar .tool-actions button { min-height: 32px; min-width: 88px; padding: 0 11px; font-size: 10px; }
 .json-view pre { max-height: 390px; padding: 16px; font-size: 10px; }
 .result-empty { margin: auto; padding: 90px 20px; }
 .result-empty p { margin-bottom: 16px; font-size: 11px; }
@@ -477,8 +489,9 @@ tbody tr.is-selected { background: var(--brand-soft); }
   .result-panel { min-height: 0; }
   .result-hero { padding: 16px; }
   .tab-content { min-height: 260px; padding: 14px; }
-  .editor-toolbar { align-items: flex-start; flex-direction: column; padding-top: 8px; padding-bottom: 8px; }
-  .editor-toolbar > div { width: 100%; overflow-x: auto; }
+  .editor-toolbar, .json-toolbar { align-items: flex-start; flex-direction: column; padding-top: 9px; padding-bottom: 9px; }
+  .editor-toolbar .tool-actions, .json-toolbar .tool-actions { width: 100%; overflow-x: auto; }
+  .editor-toolbar .tool-actions button, .json-toolbar .tool-actions button { flex: 1 0 auto; }
   .editor-status { align-items: flex-start; flex-direction: column; justify-content: center; padding-top: 7px; padding-bottom: 7px; }
   .record-list article { grid-template-columns: 1fr; gap: 12px; }
   .record-list article > code { white-space: normal; }

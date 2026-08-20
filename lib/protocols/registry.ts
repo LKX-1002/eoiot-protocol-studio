@@ -21,10 +21,8 @@ export function validateWithRegistry(bytes: number[], parserId = "auto", options
   const ranked = [...parsers].sort((a, b) => b.detect(bytes, options) - a.detect(bytes, options));
   let firstValidationError: Error | null = null;
   for (const parser of ranked) {
-    if (parser.detect(bytes, options) < 20) continue;
     try {
       parser.validate(bytes, options);
-      if (parser.detect(bytes, options) < 60) break;
       return parser;
     } catch (caught) {
       if (!firstValidationError && caught instanceof Error) firstValidationError = caught;

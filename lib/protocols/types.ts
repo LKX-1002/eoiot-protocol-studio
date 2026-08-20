@@ -31,6 +31,25 @@ export interface HistoryItem {
   pressure?: number;
 }
 
+/** 概览区中的单个业务值；由协议解析器决定标签、单位和说明。 */
+export interface OverviewItem {
+  key: string;
+  label: string;
+  value: string | number | null;
+  unit?: string;
+  note?: string;
+}
+
+/**
+ * 概览区的业务分组。
+ * 小口径和大口径返回不同分组，前端无需猜测 metrics 中哪些字段应该展示。
+ */
+export interface OverviewSection {
+  id: string;
+  title: string;
+  items: OverviewItem[];
+}
+
 /** 所有解析器必须返回的标准结果，界面只依赖该结构。 */
 export interface ParseResult {
   protocol: string;
@@ -45,6 +64,7 @@ export interface ParseResult {
   dataLength: number;
   coreValue: string;
   metrics: Record<string, string | number | null>;
+  overviewSections: OverviewSection[];
   fields: ParsedField[];
   diagnostics: Diagnostic[];
   history: HistoryItem[];

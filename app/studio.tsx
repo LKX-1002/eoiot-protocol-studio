@@ -8,6 +8,21 @@ import type { ParseResult, ParsedField } from "@/lib/protocols/types";
 
 type TabId = "overview" | "fields" | "bytes" | "history" | "diagnostics" | "json";
 type AppView = "studio" | "library" | "samples" | "records";
+type ActionFeedback = "paste" | "format" | "clear" | "copy-json" | "export-json" | null;
+
+/** 工具栏使用统一的线性图标，避免不同平台的 Emoji 造成视觉尺寸不一致。 */
+function ToolIcon({ name }: { name: "paste" | "format" | "clear" | "copy" | "download" | "check" | "code" }) {
+  const paths = {
+    paste: <><path d="M9 5h6"/><path d="M9 3h6v4H9z"/><path d="M7 5H5v16h14V5h-2"/></>,
+    format: <><path d="M4 6h16M4 12h10M4 18h7"/><path d="m16 17 2 2 3-4"/></>,
+    clear: <><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/></>,
+    copy: <><rect x="8" y="8" width="11" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2"/></>,
+    download: <><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></>,
+    check: <path d="m5 12 4 4L19 6"/>,
+    code: <><path d="m9 8-4 4 4 4m6-8 4 4-4 4"/></>,
+  };
+  return <svg className="tool-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
+}
 
 /** 本机解析记录只保存必要摘要与原始报文，最多保留最近 20 条。 */
 interface ParseRecord {
@@ -27,16 +42,6 @@ const tabs: Array<{ id: TabId; label: string }> = [
   { id: "diagnostics", label: "诊断" },
   { id: "json", label: "JSON" },
 ];
-
-const metricLabels: Record<string, { label: string; unit?: string }> = {
-  totalFlow: { label: "累计流量", unit: "m³" }, forwardFlow: { label: "正向累计", unit: "m³" },
-  reverseFlow: { label: "反向累计", unit: "m³" }, instantFlow: { label: "瞬时流量", unit: "m³/h" },
-  pressure: { label: "压力", unit: "MPa" }, temperature: { label: "温度", unit: "℃" },
-  meterVoltage: { label: "仪表电压", unit: "V" }, collectorVoltage: { label: "采集器电压", unit: "V" },
-  csq: { label: "信号 CSQ" }, valveStatus: { label: "阀门状态" }, statusInfo: { label: "设备状态" },
-  collectTime: { label: "采集时间" }, imei: { label: "IMEI" }, imsi: { label: "IMSI" },
-  hardwareVersion: { label: "硬件版本" }, softwareVersion: { label: "软件版本" }, meterType: { label: "仪表类型" },
-};
 
 const parserCapabilities: Record<string, string[]> = {
   "cjt188-small": ["10H 冷水", "11H 生活热水", "12H 直饮水", "13H 中水", "14H–19H 保留", "CS 校验"],
@@ -72,8 +77,6 @@ export function ProtocolStudio() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [view, setView] = useState<AppView>("studio");
   const [rawInput, setRawInput] = useState(samples.cjt188.value);
-  const [parserId, setParserId] = useState("auto");
-  const [intEndian, setIntEndian] = useState<"auto" | "be" | "le">("auto");
   const [result, setResult] = useState<ParseResult | null>(initialResult);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [selectedField, setSelectedField] = useState<ParsedField | null>(null);
@@ -81,6 +84,7 @@ export function ProtocolStudio() {
   const [message, setMessage] = useState("已载入示例，可直接体验解析结果");
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
+  const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /** 恢复主题与本机记录；数据不会离开当前浏览器。 */
@@ -97,22 +101,26 @@ export function ProtocolStudio() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  /** 按钮内的成功反馈保持 1.4 秒，然后自动恢复为原操作名称。 */
+  useEffect(() => {
+    if (!actionFeedback) return;
+    const timer = window.setTimeout(() => setActionFeedback(null), 1400);
+    return () => window.clearTimeout(timer);
+  }, [actionFeedback]);
+
   const inputState = useMemo(() => {
     try {
       const bytes = parseHex(rawInput);
       if (!bytes.length) return { valid: true, count: 0, text: "等待输入" };
-      validateWithRegistry(bytes, parserId, { intEndian });
+      // 前端只提供一个 HEX 入口；协议注册中心根据帧长度结构自动选择解析器。
+      validateWithRegistry(bytes);
       return { valid: true, count: bytes.length, text: "格式与帧校验通过" };
     } catch (caught) {
       let count = 0;
       try { count = parseHex(rawInput).length; } catch { /* 非法 HEX 无法可靠计算字节数。 */ }
       return { valid: false, count, text: caught instanceof Error ? caught.message : "HEX 或帧结构错误" };
     }
-  }, [rawInput, parserId, intEndian]);
-
-  const visibleMetrics = result
-    ? Object.entries(result.metrics).filter(([key, value]) => metricLabels[key] && value !== null && value !== "—").slice(0, 9)
-    : [];
+  }, [rawInput]);
 
   const toggleTheme = () => {
     const next = theme === "light" ? "dark" : "light";
@@ -133,7 +141,7 @@ export function ProtocolStudio() {
   const parseFrame = () => {
     try {
       const bytes = parseHex(rawInput);
-      const parsed = parseWithRegistry(bytes, parserId, { intEndian });
+      const parsed = parseWithRegistry(bytes);
       const normalized = hex(bytes);
       setRawInput(normalized);
       setResult(parsed);
@@ -152,7 +160,6 @@ export function ProtocolStudio() {
   /** 从样例页载入时立即解析，让用户一步回到完整结果态。 */
   const useSample = (sample: (typeof sampleList)[number]) => {
     setRawInput(sample.value);
-    setParserId("auto");
     setView("studio");
     try {
       const parsed = parseWithRegistry(parseHex(sample.value));
@@ -164,18 +171,35 @@ export function ProtocolStudio() {
   };
 
   const formatInput = () => {
-    try { setRawInput(hex(parseHex(rawInput))); setError(""); setToast("报文格式已整理"); }
+    try { setRawInput(hex(parseHex(rawInput))); setError(""); setActionFeedback("format"); }
     catch (caught) { setError(caught instanceof Error ? caught.message : "无法格式化当前内容。"); }
   };
 
-  const copyText = async (text: string, label: string) => {
-    try { await navigator.clipboard.writeText(text); setToast(`${label}已复制`); }
+  const copyText = async (text: string, label: string, feedback?: ActionFeedback) => {
+    try { await navigator.clipboard.writeText(text); if (feedback) setActionFeedback(feedback); else setToast(`${label}已复制`); }
     catch { setError("浏览器未授予剪贴板权限，请手动复制。"); }
   };
 
   const pasteFrame = async () => {
-    try { setRawInput(await navigator.clipboard.readText()); setError(""); setToast("已从剪贴板粘贴"); }
+    try {
+      setRawInput(await navigator.clipboard.readText());
+      setResult(null);
+      setSelectedField(null);
+      setMessage("已粘贴新报文，等待解析");
+      setError("");
+      setActionFeedback("paste");
+    }
     catch { setError("浏览器未授予剪贴板读取权限，请使用 Ctrl+V。"); }
+  };
+
+  /** 清空编辑器及旧结果，并在按钮本身显示明确反馈。 */
+  const clearFrame = () => {
+    setRawInput("");
+    setResult(null);
+    setError("");
+    setSelectedField(null);
+    setMessage("等待输入新的数据帧");
+    setActionFeedback("clear");
   };
 
   const importText = (event: ChangeEvent<HTMLInputElement>) => {
@@ -193,7 +217,7 @@ export function ProtocolStudio() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(result, null, 2)], { type: "application/json" }));
     const anchor = document.createElement("a");
     anchor.href = url; anchor.download = `eoiot-${result.dataIdentifier || "result"}.json`; anchor.click();
-    URL.revokeObjectURL(url); setToast("JSON 已导出");
+    URL.revokeObjectURL(url); setActionFeedback("export-json");
   };
 
   const reuseRecord = (record: ParseRecord) => { setRawInput(record.raw); setView("studio"); setMessage("已恢复历史报文，按 Ctrl + Enter 重新解析"); };
@@ -227,9 +251,9 @@ export function ProtocolStudio() {
           <section className="panel input-panel">
             <div className="panel-title"><div><span className="step">01</span><strong>输入原始帧</strong></div><span className="byte-count">{inputState.count} Bytes</span></div>
             <div className="input-body">
-              <div className="form-grid"><label><span>解析协议</span><select value={parserId} onChange={(event) => setParserId(event.target.value)}><option value="auto">智能识别（推荐）</option>{parsers.map((parser) => <option value={parser.id} key={parser.id}>{parser.name}</option>)}</select></label><label><span>整数端序</span><select value={intEndian} onChange={(event) => setIntEndian(event.target.value as "auto" | "be" | "le")}><option value="auto">自动</option><option value="be">大端 BE</option><option value="le">小端 LE</option></select></label></div>
+              <div className="auto-recognition"><span className="secure-dot"/><div><strong>协议与端序自动识别</strong><p>同一输入框支持 Joymeter 小口径和沃特曼大口径报文，无需手动选择。</p></div></div>
               <div className={`hex-editor${!inputState.valid ? " has-error" : ""}`}>
-                <div className="editor-toolbar"><span>HEX / RAW FRAME</span><div><button type="button" onClick={pasteFrame}>粘贴</button><button type="button" onClick={formatInput}>格式化</button><button type="button" onClick={() => { setRawInput(""); setResult(null); setError(""); }}>清空</button></div></div>
+                <div className="editor-toolbar"><span className="editor-label"><ToolIcon name="code"/>HEX / RAW FRAME</span><div className="tool-actions"><button className={actionFeedback === "paste" ? "is-success" : ""} type="button" onClick={pasteFrame}>{actionFeedback === "paste" ? <ToolIcon name="check"/> : <ToolIcon name="paste"/>}<span>{actionFeedback === "paste" ? "已粘贴" : "粘贴"}</span></button><button className={actionFeedback === "format" ? "is-success" : ""} type="button" onClick={formatInput}>{actionFeedback === "format" ? <ToolIcon name="check"/> : <ToolIcon name="format"/>}<span>{actionFeedback === "format" ? "已格式化" : "格式化"}</span></button><button className={actionFeedback === "clear" ? "is-success" : ""} type="button" onClick={clearFrame}>{actionFeedback === "clear" ? <ToolIcon name="check"/> : <ToolIcon name="clear"/>}<span>{actionFeedback === "clear" ? "已清空" : "清空"}</span></button></div></div>
                 <div className="editor-main"><textarea value={rawInput} onChange={(event) => { setRawInput(event.target.value); setError(""); setResult(null); setSelectedField(null); setMessage("报文已修改，等待重新解析"); }} spellCheck={false} aria-label="原始十六进制报文" placeholder="粘贴 HEX 报文，支持空格、换行、逗号和 0x 前缀"/></div>
                 <div className="editor-status">{inputState.valid && inputState.count > 0 ? <span className="valid">● {inputState.text}</span> : <span aria-hidden="true"/>}<span>本地处理 · 不上传</span></div>
               </div>
@@ -245,19 +269,19 @@ export function ProtocolStudio() {
               <div className="primary-metrics"><div><span>核心读数</span><strong>{result.coreValue}</strong></div><div><span>表号</span><strong>{result.meterNo}</strong></div><div><span>数据标识 DI</span><strong>{result.dataIdentifier}</strong></div><div><span>控制码</span><strong>{result.controlCode}</strong></div></div>
               <div className="tabs" role="tablist">{tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>{tab.label}{tab.id === "history" && result.history.length > 0 && <em>{result.history.length}</em>}{tab.id === "diagnostics" && <em>{result.diagnostics.length}</em>}</button>)}</div>
               <div className="tab-content">
-                {activeTab === "overview" && <><div className="result-insights"><article><span>帧长度</span><strong>{result.rawBytes.length} Bytes</strong></article><article><span>已识别字段</span><strong>{result.fields.length} 项</strong></article><article><span>诊断状态</span><strong>{result.diagnostics.some((item) => item.level === "bad") ? "存在错误" : result.diagnostics.some((item) => item.level === "warn") ? "需要关注" : "全部通过"}</strong></article><article><span>历史记录</span><strong>{result.history.length} 条</strong></article></div><div className="metric-grid">{visibleMetrics.map(([key, value]) => <article key={key}><span>{metricLabels[key].label}</span><strong>{formatMetric(value, metricLabels[key].unit)}</strong></article>)}</div></>}
+                {activeTab === "overview" && <><div className="result-insights"><article><span>帧长度</span><strong>{result.rawBytes.length} Bytes</strong></article><article><span>已识别字段</span><strong>{result.fields.length} 项</strong></article><article><span>诊断状态</span><strong>{result.diagnostics.some((item) => item.level === "bad") ? "存在错误" : result.diagnostics.some((item) => item.level === "warn") ? "需要关注" : "全部通过"}</strong></article><article><span>历史记录</span><strong>{result.history.length} 条</strong></article></div><div className="overview-sections">{result.overviewSections.map((section) => <section className="overview-group" key={section.id}><h3>{section.title}</h3><div className="metric-grid">{section.items.filter((item) => item.value !== null && item.value !== "—").map((item) => <article key={item.key}><span>{item.label}</span><strong>{formatMetric(item.value, item.unit)}</strong>{item.note && <small>{item.note}</small>}</article>)}</div></section>)}</div></>}
                 {activeTab === "fields" && <div className="table-scroll"><table><thead><tr><th>偏移</th><th>字段</th><th>原始字节</th><th>解析值</th><th>说明</th></tr></thead><tbody>{result.fields.map((item) => <tr className={selectedField === item ? "is-selected" : ""} key={`${item.offset}-${item.name}`} onMouseEnter={() => setSelectedField(item)} onClick={() => setSelectedField(item)}><td>{item.offset}–{item.offset + Math.max(item.length - 1, 0)}</td><td>{item.name}</td><td><code>{item.raw || "—"}</code></td><td><strong>{item.value}</strong>{item.unit ? ` ${item.unit}` : ""}</td><td>{item.note ?? "—"}</td></tr>)}</tbody></table></div>}
                 {activeTab === "bytes" && <ByteMap result={result} selectedField={selectedField} onSelect={setSelectedField}/>} 
                 {activeTab === "history" && (result.history.length ? <div className="table-scroll"><table><thead><tr><th>采集时间</th><th>正向累计</th><th>反向累计</th><th>瞬时流量</th><th>压力</th></tr></thead><tbody>{result.history.map((item, index) => <tr key={`${item.collectTime}-${index}`}><td>{item.collectTime}</td><td>{item.forwardFlow ?? "—"}</td><td>{item.reverseFlow ?? "—"}</td><td>{item.instantFlow ?? "—"}</td><td>{item.pressure ?? "—"}</td></tr>)}</tbody></table></div> : <div className="empty-tab"><span>↺</span><strong>这条报文没有历史数据</strong><p>可在样例库载入沃特曼 9021 报文体验历史数据解析。</p></div>)}
                 {activeTab === "diagnostics" && <div className="diagnostic-list">{result.diagnostics.map((item, index) => <article className={`diag-${item.level}`} key={`${item.text}-${index}`}><span>{item.level === "ok" ? "✓" : item.level === "warn" ? "!" : "×"}</span><div><strong>{item.level === "ok" ? "检查通过" : item.level === "warn" ? "需要关注" : "解析错误"}</strong><p>{item.text}</p></div></article>)}</div>}
-                {activeTab === "json" && <div className="json-view"><div><button type="button" onClick={() => copyText(JSON.stringify(result, null, 2), "JSON")}>复制 JSON</button><button type="button" onClick={exportJson}>导出文件</button></div><pre>{JSON.stringify(result, null, 2)}</pre></div>}
+                {activeTab === "json" && <div className="json-view"><div className="json-toolbar"><span><ToolIcon name="code"/>结构化解析结果</span><div className="tool-actions"><button className={actionFeedback === "copy-json" ? "is-success" : ""} type="button" onClick={() => copyText(JSON.stringify(result, null, 2), "JSON", "copy-json")}>{actionFeedback === "copy-json" ? <ToolIcon name="check"/> : <ToolIcon name="copy"/>}<span>{actionFeedback === "copy-json" ? "已复制" : "复制 JSON"}</span></button><button className={actionFeedback === "export-json" ? "is-success" : ""} type="button" onClick={exportJson}>{actionFeedback === "export-json" ? <ToolIcon name="check"/> : <ToolIcon name="download"/>}<span>{actionFeedback === "export-json" ? "已导出" : "导出文件"}</span></button></div></div><pre>{JSON.stringify(result, null, 2)}</pre></div>}
               </div>
             </> : <div className="result-empty"><span>68</span><h2>等待数据帧</h2><p>粘贴或导入报文后，结果会在这里分层展示。</p><button type="button" onClick={() => setView("samples")}>从样例开始</button></div>}
           </section>
         </div>
       </section>}
 
-      {view === "library" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">PROTOCOL REGISTRY</p><h1>协议能力库</h1><span>查看当前已经接入并可直接解析的协议插件。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div><div className="collection-grid">{parsers.map((parser, index) => <article className="collection-card" key={parser.id}><div className="card-top"><span className="protocol-icon">{String(index + 1).padStart(2, "0")}</span><span className="ready-badge">● 可用</span></div><p>{parser.category === "water" ? "水务计量" : parser.category}</p><h2>{parser.name}</h2><code>{parser.id}</code><div className="capability-list">{parserCapabilities[parser.id]?.map((item) => <span key={item}>{item}</span>)}</div><button type="button" onClick={() => { setParserId(parser.id); setView("studio"); }}>使用此协议解析</button></article>)}</div></section>}
+      {view === "library" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">PROTOCOL REGISTRY</p><h1>协议能力库</h1><span>查看当前已经接入并可由后台解析内核自动识别的协议。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div><div className="collection-grid">{parsers.map((parser, index) => <article className="collection-card" key={parser.id}><div className="card-top"><span className="protocol-icon">{String(index + 1).padStart(2, "0")}</span><span className="ready-badge">● 可用</span></div><p>{parser.category === "water" ? "水务计量" : parser.category}</p><h2>{parser.name}</h2><code>{parser.id}</code><div className="capability-list">{parserCapabilities[parser.id]?.map((item) => <span key={item}>{item}</span>)}</div><button type="button" onClick={() => setView("studio")}>进入自动解析</button></article>)}</div></section>}
 
       {view === "samples" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">FRAME PLAYGROUND</p><h1>样例帧</h1><span>无需准备设备数据，选择样例即可验证完整解析链路。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div><div className="sample-grid">{sampleList.map((sample) => <article className="sample-card" key={sample.id}><div><span className="sample-type">{sample.protocolId === "wotman-big" ? "WOTMAN" : "CJ/T 188"}</span><strong>{parseHex(sample.value).length} Bytes</strong></div><h2>{sample.name}</h2><p>{sample.description}</p><code>{sample.value}</code><footer><button type="button" onClick={() => copyText(sample.value, "样例报文")}>复制 HEX</button><button className="primary-link" type="button" onClick={() => useSample(sample)}>载入并解析</button></footer></article>)}</div></section>}
 
