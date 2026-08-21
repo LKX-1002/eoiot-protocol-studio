@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { hex, parseHex } from "@/lib/protocols/bytes";
+import { buildAnalysisSummary } from "@/lib/protocols/analysis";
 import { parseWithRegistry, parsers, validateWithRegistry } from "@/lib/protocols/registry";
 import { sampleList, samples } from "@/lib/protocols/samples";
 import type { ParseResult, ParsedField } from "@/lib/protocols/types";
@@ -22,6 +23,19 @@ function ToolIcon({ name }: { name: "paste" | "format" | "clear" | "copy" | "dow
     code: <><path d="m9 8-4 4 4 4m6-8 4 4-4 4"/></>,
   };
   return <svg className="tool-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
+}
+
+/** 侧栏导航统一使用 18px 线性 SVG，保证图标线宽、基线和文字间距一致。 */
+function NavIcon({ name }: { name: "parser" | "library" | "sample" | "history" | "device" | "team" }) {
+  const paths = {
+    parser: <><path d="M5 3h10l4 4v14H5z"/><path d="M15 3v5h5M8 12h8M8 16h5"/></>,
+    library: <><path d="M5 4h12a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z"/><path d="M8 4v16M11 8h5M11 12h5"/></>,
+    sample: <><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h3v3H8zM13 8h3v3h-3zM8 13h3v3H8zM13 13h3v3h-3z"/></>,
+    history: <><path d="M4 12a8 8 0 1 0 2.34-5.66L4 8.68"/><path d="M4 4v4.68h4.68M12 8v5l3 2"/></>,
+    device: <><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 7h6M9 11h6M10 17h4"/></>,
+    team: <><path d="M16 20v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M17 11a4 4 0 0 1 4 4v2M17 3.5a4 4 0 0 1 0 7"/></>,
+  };
+  return <svg className="nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
 /** 本机解析记录只保存必要摘要与原始报文，最多保留最近 20 条。 */
@@ -121,6 +135,9 @@ export function ProtocolStudio() {
       return { valid: false, count, text: caught instanceof Error ? caught.message : "HEX 或帧结构错误" };
     }
   }, [rawInput]);
+
+  /** 解析结果变化时同步生成本地规则结论，不上传设备报文。 */
+  const analysis = useMemo(() => result ? buildAnalysisSummary(result) : null, [result]);
 
   const toggleTheme = () => {
     const next = theme === "light" ? "dark" : "light";
@@ -234,13 +251,13 @@ export function ProtocolStudio() {
     <div className="app-grid">
       <aside className="sidebar"><nav aria-label="主导航">
         <p className="nav-title">工作台</p>
-        <button className={`nav-item${view === "studio" ? " active" : ""}`} type="button" onClick={() => setView("studio")}><span>⌁</span><b>协议解析</b></button>
-        <button className={`nav-item${view === "library" ? " active" : ""}`} type="button" onClick={() => setView("library")}><span>◇</span><b>协议库</b></button>
-        <button className={`nav-item${view === "samples" ? " active" : ""}`} type="button" onClick={() => setView("samples")}><span>▣</span><b>样例帧</b></button>
-        <button className={`nav-item${view === "records" ? " active" : ""}`} type="button" onClick={() => setView("records")}><span>↺</span><b>解析记录</b></button>
+        <button className={`nav-item${view === "studio" ? " active" : ""}`} type="button" onClick={() => setView("studio")}><NavIcon name="parser"/><b>协议解析</b></button>
+        <button className={`nav-item${view === "library" ? " active" : ""}`} type="button" onClick={() => setView("library")}><NavIcon name="library"/><b>协议库</b></button>
+        <button className={`nav-item${view === "samples" ? " active" : ""}`} type="button" onClick={() => setView("samples")}><NavIcon name="sample"/><b>样例帧</b></button>
+        <button className={`nav-item${view === "records" ? " active" : ""}`} type="button" onClick={() => setView("records")}><NavIcon name="history"/><b>解析记录</b></button>
         <p className="nav-title">云端能力</p>
-        <button className="nav-item is-disabled" type="button" disabled><span>⌾</span><b>设备与上报</b><em>规划中</em></button>
-        <button className="nav-item is-disabled" type="button" disabled><span>◎</span><b>团队协作</b><em>规划中</em></button>
+        <button className="nav-item is-disabled" type="button" disabled><NavIcon name="device"/><b>设备与上报</b><em>规划中</em></button>
+        <button className="nav-item is-disabled" type="button" disabled><NavIcon name="team"/><b>团队协作</b><em>规划中</em></button>
       </nav><div className="local-note"><span className="secure-dot"/><strong>隐私安全</strong><p>解析与记录仅保存在本机</p></div></aside>
 
       {view === "studio" && <section className="page studio-page">
@@ -257,7 +274,7 @@ export function ProtocolStudio() {
                 <div className="editor-main"><textarea value={rawInput} onChange={(event) => { setRawInput(event.target.value); setError(""); setResult(null); setSelectedField(null); setMessage("报文已修改，等待重新解析"); }} spellCheck={false} aria-label="原始十六进制报文" placeholder="粘贴 HEX 报文，支持空格、换行、逗号和 0x 前缀"/></div>
                 <div className="editor-status">{inputState.valid && inputState.count > 0 ? <span className="valid">● {inputState.text}</span> : <span aria-hidden="true"/>}<span>本地处理 · 不上传</span></div>
               </div>
-              <div className="input-actions"><button className="parse-button" type="button" disabled={!inputState.valid || !inputState.count} onClick={parseFrame}>识别并解析报文 <kbd>Ctrl ↵</kbd></button><button className="sample-button" type="button" onClick={() => useSample(sampleList[(sampleList.findIndex((item) => item.value === rawInput) + 1) % sampleList.length])}>换个样例</button></div>
+              <div className="input-actions"><button className="parse-button" type="button" disabled={!inputState.valid || !inputState.count} onClick={parseFrame}>识别并解析报文</button><button className="sample-button" type="button" onClick={() => useSample(sampleList[(sampleList.findIndex((item) => item.value === rawInput) + 1) % sampleList.length])}>换个样例</button></div>
               {error || !inputState.valid ? <p className="inline-error" role="alert">{error || inputState.text}</p> : <p className="input-footnote">每次成功解析会保存到本机记录，最多保留 20 条，可随时清空。</p>}
             </div>
           </section>
@@ -269,7 +286,20 @@ export function ProtocolStudio() {
               <div className="primary-metrics"><div><span>核心读数</span><strong>{result.coreValue}</strong></div><div><span>表号</span><strong>{result.meterNo}</strong></div><div><span>数据标识 DI</span><strong>{result.dataIdentifier}</strong></div><div><span>控制码</span><strong>{result.controlCode}</strong></div></div>
               <div className="tabs" role="tablist">{tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>{tab.label}{tab.id === "history" && result.history.length > 0 && <em>{result.history.length}</em>}{tab.id === "diagnostics" && <em>{result.diagnostics.length}</em>}</button>)}</div>
               <div className="tab-content">
-                {activeTab === "overview" && <><div className="result-insights"><article><span>帧长度</span><strong>{result.rawBytes.length} Bytes</strong></article><article><span>已识别字段</span><strong>{result.fields.length} 项</strong></article><article><span>诊断状态</span><strong>{result.diagnostics.some((item) => item.level === "bad") ? "存在错误" : result.diagnostics.some((item) => item.level === "warn") ? "需要关注" : "全部通过"}</strong></article><article><span>历史记录</span><strong>{result.history.length} 条</strong></article></div><div className="overview-sections">{result.overviewSections.map((section) => <section className="overview-group" key={section.id}><h3>{section.title}</h3><div className="metric-grid">{section.items.filter((item) => item.value !== null && item.value !== "—").map((item) => <article key={item.key}><span>{item.label}</span><strong>{formatMetric(item.value, item.unit)}</strong>{item.note && <small>{item.note}</small>}</article>)}</div></section>)}</div></>}
+                {activeTab === "overview" && <>
+                  {analysis && <section className={`analysis-card analysis-${analysis.level}`} aria-label="分析结论">
+                    <header><div><span className="analysis-icon">{analysis.level === "normal" ? "✓" : analysis.level === "abnormal" ? "×" : "!"}</span><strong>上报分析</strong></div><span className="analysis-status">{analysis.statusLabel}</span></header>
+                    <div className="analysis-body">
+                      <div className="analysis-summary-grid">{analysis.items.map((item) => <article className={`analysis-item analysis-item-${item.key}`} key={item.key}><span>{item.label}</span><strong>{item.value}</strong>{item.note && <small>{item.note}</small>}</article>)}</div>
+                      <p className="analysis-advice"><strong>建议</strong>{analysis.recommendation}</p>
+                    </div>
+                  </section>}
+                  <div className="result-insights"><article><span>帧长度</span><strong>{result.rawBytes.length} Bytes</strong></article><article><span>已识别字段</span><strong>{result.fields.length} 项</strong></article><article><span>诊断状态</span><strong>{result.diagnostics.some((item) => item.level === "bad") ? "存在错误" : result.diagnostics.some((item) => item.level === "warn") ? "需要关注" : "全部通过"}</strong></article><article><span>历史记录</span><strong>{result.history.length} 条</strong></article></div>
+                  <div className="overview-sections">{result.overviewSections.map((section) => {
+                    const visibleItems = section.items.filter((item) => item.value !== null && item.value !== "—");
+                    return <section className={`overview-group overview-${section.id}`} data-count={visibleItems.length} key={section.id}><h3><span>{section.title}</span><em>{visibleItems.length} 项</em></h3><div className="metric-grid">{visibleItems.map((item) => <article key={item.key}><span>{item.label}</span><strong>{formatMetric(item.value, item.unit)}</strong>{item.note && <small>{item.note}</small>}</article>)}</div></section>;
+                  })}</div>
+                </>}
                 {activeTab === "fields" && <div className="table-scroll"><table><thead><tr><th>偏移</th><th>字段</th><th>原始字节</th><th>解析值</th><th>说明</th></tr></thead><tbody>{result.fields.map((item) => <tr className={selectedField === item ? "is-selected" : ""} key={`${item.offset}-${item.name}`} onMouseEnter={() => setSelectedField(item)} onClick={() => setSelectedField(item)}><td>{item.offset}–{item.offset + Math.max(item.length - 1, 0)}</td><td>{item.name}</td><td><code>{item.raw || "—"}</code></td><td><strong>{item.value}</strong>{item.unit ? ` ${item.unit}` : ""}</td><td>{item.note ?? "—"}</td></tr>)}</tbody></table></div>}
                 {activeTab === "bytes" && <ByteMap result={result} selectedField={selectedField} onSelect={setSelectedField}/>} 
                 {activeTab === "history" && (result.history.length ? <div className="table-scroll"><table><thead><tr><th>采集时间</th><th>正向累计</th><th>反向累计</th><th>瞬时流量</th><th>压力</th></tr></thead><tbody>{result.history.map((item, index) => <tr key={`${item.collectTime}-${index}`}><td>{item.collectTime}</td><td>{item.forwardFlow ?? "—"}</td><td>{item.reverseFlow ?? "—"}</td><td>{item.instantFlow ?? "—"}</td><td>{item.pressure ?? "—"}</td></tr>)}</tbody></table></div> : <div className="empty-tab"><span>↺</span><strong>这条报文没有历史数据</strong><p>可在样例库载入沃特曼 9021 报文体验历史数据解析。</p></div>)}

@@ -35,11 +35,12 @@ body {
   --warning-soft: #fff3d7;
   --danger: #b54747;
   --danger-soft: #fae9e9;
-  --editor: #102027;
-  --editor-line: #294048;
-  --editor-ink: #d9e7e9;
-  --editor-muted: #88a0a6;
-  --editor-accent: #66c8bc;
+  /* 浅色模式下代码区域与面板使用同一明度体系，避免出现突兀的深色孤岛。 */
+  --editor: #f7fafb;
+  --editor-line: #d7e2e5;
+  --editor-ink: #17333b;
+  --editor-muted: #6f858b;
+  --editor-accent: #087d72;
   --shadow: 0 12px 36px rgba(29, 54, 62, .09);
   min-height: 100vh;
   background: var(--bg);
@@ -152,15 +153,15 @@ body {
 .form-grid select { width: 100%; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-soft); color: var(--ink); padding: 9px 10px; font-size: 11px; outline: none; }
 .form-grid select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
 
-/* 深色 HEX 编辑器在两种页面主题下都维持开发工具视觉。 */
-.hex-editor { border: 1px solid var(--editor-line); border-radius: 11px; overflow: hidden; background: var(--editor); box-shadow: inset 0 1px 0 rgba(255,255,255,.04); }
+/* HEX 编辑器完全使用主题令牌，使浅色与深色模式分别保持统一。 */
+.hex-editor { border: 1px solid var(--editor-line); border-radius: 11px; overflow: hidden; background: var(--editor); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--editor-ink) 3%, transparent); }
 .hex-editor.has-error { border-color: var(--danger); }
 .editor-toolbar { min-height: 40px; padding: 0 10px 0 13px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--editor-line); background: color-mix(in srgb, var(--editor) 88%, var(--panel)); color: var(--editor-muted); font-size: 9px; letter-spacing: .08em; }
 .editor-label, .json-toolbar > span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .tool-icon { width: 14px; height: 14px; flex: 0 0 auto; }
 .tool-actions { display: flex; align-items: center; gap: 5px; }
 .tool-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; min-width: 66px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--editor-muted); padding: 0 9px; font-size: 9px; letter-spacing: 0; transition: color .16s ease, background .16s ease, border-color .16s ease, transform .16s ease; }
-.tool-actions button:hover { border-color: var(--editor-line); background: rgba(255,255,255,.055); color: var(--editor-ink); }
+.tool-actions button:hover { border-color: var(--editor-line); background: color-mix(in srgb, var(--editor-ink) 6%, transparent); color: var(--editor-ink); }
 .tool-actions button:active { transform: translateY(1px); }
 .tool-actions button.is-success { border-color: color-mix(in srgb, var(--brand) 38%, transparent); background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); }
 .editor-main { display: grid; grid-template-columns: 36px minmax(0,1fr); }
@@ -169,7 +170,7 @@ body {
 .editor-main textarea::placeholder { color: var(--editor-muted); }
 .editor-status { min-height: 33px; padding: 0 11px; border-top: 1px solid var(--editor-line); display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--editor-muted); font-size: 9px; }
 .editor-status .valid { color: var(--editor-accent); }
-.editor-status .invalid { color: #ff9a9a; }
+.editor-status .invalid { color: var(--danger); }
 .input-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 11px; }
 .parse-button, .sample-button { min-height: 39px; border-radius: 9px; padding: 0 13px; font-size: 11px; }
 .parse-button { border: 1px solid var(--brand); background: var(--brand); color: var(--brand-ink); font-weight: 500; box-shadow: 0 7px 18px color-mix(in srgb, var(--brand) 24%, transparent); }
@@ -316,7 +317,10 @@ td strong { font-weight: 500; }
 .app-grid { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); min-height: calc(100vh - 68px); }
 .sidebar { padding: 22px 14px 18px; }
 .nav-title { margin: 21px 12px 8px; font-size: 10px; }
-.nav-item { min-height: 43px; padding: 10px 12px; grid-template-columns: 22px 1fr auto; gap: 9px; border-radius: 10px; font-size: 13px; }
+.nav-item { min-height: 43px; padding: 10px 12px; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 11px; border-radius: 10px; font-size: 13px; }
+.nav-icon { width: 18px; height: 18px; display: block; justify-self: center; color: currentColor; }
+.nav-item b { min-width: 0; line-height: 1.25; }
+.nav-item.active .nav-icon { stroke-width: 2; }
 .nav-item em { font-size: 10px; }
 .nav-item.is-disabled { opacity: .45; cursor: not-allowed; }
 .local-note { padding: 14px; border-radius: 12px; }
@@ -361,7 +365,6 @@ td strong { font-weight: 500; }
 .input-actions { margin-top: 14px; gap: 10px; }
 .parse-button, .sample-button { min-height: 46px; border-radius: 10px; padding: 0 16px; font-size: 13px; }
 .parse-button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
-.parse-button kbd { margin-left: 8px; padding: 2px 5px; border: 1px solid color-mix(in srgb, var(--brand-ink) 40%, transparent); border-radius: 4px; font-size: 9px; font-family: inherit; opacity: .78; }
 .input-footnote, .inline-error { margin-top: 13px; font-size: 11px; }
 
 .result-hero { padding: 20px; }
@@ -382,20 +385,52 @@ td strong { font-weight: 500; }
 .tabs button { padding: 14px 10px 12px; font-size: 11px; }
 .tabs em { min-width: 18px; height: 18px; font-size: 9px; }
 .tab-content { flex: 1; min-height: 330px; padding: 18px; }
-.result-insights { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 1px; margin-bottom: 14px; overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: var(--line); }
-.result-insights article { padding: 12px 13px; background: var(--panel); }
+
+/* 自动分析卡片只突出本次上报的四组关键数据，减少与下方完整概览重复。 */
+.analysis-card { --analysis-color: var(--brand); --analysis-soft: var(--brand-soft); margin-bottom: 16px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--analysis-color) 25%, var(--line)); border-radius: 14px; background: var(--panel); box-shadow: 0 8px 24px color-mix(in srgb, var(--analysis-color) 7%, transparent); }
+.analysis-card.analysis-attention { --analysis-color: var(--warning); --analysis-soft: var(--warning-soft); }
+.analysis-card.analysis-abnormal { --analysis-color: var(--danger); --analysis-soft: var(--danger-soft); }
+.analysis-card > header { min-height: 44px; padding: 0 15px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--analysis-soft) 42%, var(--panel)); }
+.analysis-card > header > div { display: flex; align-items: center; gap: 8px; }
+.analysis-card > header strong { font-size: 12px; font-weight: 600; }
+.analysis-icon { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 7px; background: var(--analysis-soft); color: var(--analysis-color); font-size: 12px; font-weight: 700; }
+.analysis-status { border-radius: 999px; padding: 4px 8px; background: var(--analysis-soft); color: var(--analysis-color); font-size: 9px; font-weight: 600; }
+.analysis-body { padding: 14px 15px 13px; }
+.analysis-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.analysis-item { min-width: 0; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+.analysis-item-signals { grid-column: 1 / -1; display: grid; grid-template-columns: 82px 1fr; align-items: center; column-gap: 10px; }
+.analysis-item > span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 9px; }
+.analysis-item > strong { display: block; overflow-wrap: anywhere; color: var(--ink); font-size: 12px; font-weight: 600; }
+.analysis-item-signals > span { margin: 0; }
+.analysis-item-signals > small { grid-column: 2; }
+.analysis-item > small { display: block; margin-top: 4px; color: var(--muted); font-size: 8px; }
+.analysis-advice { margin: 11px 1px 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.analysis-advice strong { margin-right: 7px; color: var(--analysis-color); font-weight: 600; }
+
+/* 概览统计改为轻量信息条，业务分组使用统一容器和更稳定的栅格。 */
+.result-insights { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); margin-bottom: 14px; overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); }
+.result-insights article { position: relative; padding: 11px 13px; background: transparent; }
+.result-insights article + article::before { content: ""; position: absolute; inset: 9px auto 9px 0; width: 1px; background: var(--line); }
 .result-insights span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; }
 .result-insights strong { font-size: 12px; font-weight: 600; }
-.metric-grid { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
-.metric-grid article { padding: 14px; border-radius: 11px; }
+.metric-grid { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 9px; }
+.metric-grid article { padding: 13px 14px; border-radius: 10px; }
 .metric-grid span { font-size: 10px; }
 .metric-grid strong { font-size: 14px; }
 .auto-recognition { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); }
 .auto-recognition .secure-dot { flex: 0 0 auto; margin-top: 4px; }
 .auto-recognition strong { display: block; margin-bottom: 3px; color: var(--ink); font-size: 12px; }
 .auto-recognition p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
-.overview-sections { display: grid; gap: 16px; }
-.overview-group h3 { margin: 0 0 9px; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.overview-sections { display: grid; gap: 13px; }
+.overview-group { padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel-soft) 72%, var(--panel)); }
+.overview-group h3 { margin: 0 0 11px; display: flex; align-items: center; gap: 9px; color: var(--ink); font-size: 10px; font-weight: 600; letter-spacing: .04em; }
+.overview-group h3::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+.overview-group h3 em { order: 2; color: var(--faint); font-size: 9px; font-style: normal; font-weight: 400; letter-spacing: 0; }
+.overview-group .metric-grid article { background: var(--panel); box-shadow: 0 3px 10px color-mix(in srgb, var(--ink) 3%, transparent); }
+.overview-meter[data-count="5"] .metric-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.overview-meter[data-count="5"] .metric-grid article { grid-column: span 2; }
+.overview-meter[data-count="5"] .metric-grid article:nth-last-child(-n+2) { grid-column: span 3; }
+.overview-meter[data-count="4"] .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .overview-group .metric-grid article small { display: block; margin-top: 6px; color: var(--muted); font-size: 9px; line-height: 1.4; }
 table { font-size: 11px; }
 th { padding: 10px 8px; }
@@ -485,6 +520,12 @@ tbody tr.is-selected { background: var(--brand-soft); }
   .heading-actions button { flex: 1; }
   .form-grid, .collection-grid, .sample-grid { grid-template-columns: 1fr; }
   .primary-metrics, .result-insights { grid-template-columns: 1fr 1fr; }
+  .result-insights article:nth-child(3)::before { display: none; }
+  .analysis-summary-grid { grid-template-columns: 1fr 1fr; }
+  .analysis-item-signals { grid-column: 1 / -1; }
+  .overview-meter[data-count] .metric-grid { grid-template-columns: 1fr 1fr; }
+  .overview-meter[data-count] .metric-grid article,
+  .overview-meter[data-count] .metric-grid article:nth-last-child(-n+2) { grid-column: auto; }
   .metric-grid { grid-template-columns: 1fr 1fr; }
   .result-panel { min-height: 0; }
   .result-hero { padding: 16px; }
@@ -502,8 +543,13 @@ tbody tr.is-selected { background: var(--brand-soft); }
   .theme-toggle { margin-left: auto; }
   .editor-main textarea { min-height: 210px; }
   .primary-metrics, .result-insights { grid-template-columns: 1fr; }
+  .result-insights article + article::before { inset: 0 12px auto; width: auto; height: 1px; }
+  .analysis-summary-grid { grid-template-columns: 1fr; }
+  .analysis-item-signals { grid-column: auto; display: block; }
+  .analysis-item-signals > span { margin-bottom: 5px; }
+  .analysis-item-signals > small { grid-column: auto; }
+  .overview-meter[data-count] .metric-grid { grid-template-columns: 1fr; }
   .primary-metrics > div + div { border-left: 0; border-top: 1px solid var(--line); }
   .input-actions { grid-template-columns: 1fr; }
-  .parse-button kbd { display: none; }
   .metric-grid { grid-template-columns: 1fr; }
 }
