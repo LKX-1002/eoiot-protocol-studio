@@ -68,21 +68,108 @@ function formatMetric(value: string | number | null, unit?: string) {
   return unit ? `${formatted} ${unit}` : formatted;
 }
 
+/** 复用字段解释的标准五列表格，保持基础字段和后续设备字段列宽一致。 */
+function FieldTable({ fields, selectedField, onSelect }: { fields: ParsedField[]; selectedField: ParsedField | null; onSelect: (field: ParsedField) => void }) {
+  return <div className="table-scroll field-table-scroll"><table className="field-table"><colgroup><col className="field-col-offset" /><col className="field-col-name" /><col className="field-col-raw" /><col className="field-col-value" /><col className="field-col-note" /></colgroup><thead><tr><th>偏移</th><th>字段</th><th>原始字节</th><th>解析值</th><th>说明</th></tr></thead><tbody>{fields.map((item) => <tr className={selectedField === item ? "is-selected" : ""} key={`${item.offset}-${item.name}`} onMouseEnter={() => onSelect(item)} onClick={() => onSelect(item)}><td>{item.offset}–{item.offset + Math.max(item.length - 1, 0)}</td><td>{item.name}</td><td><code>{item.raw || "—"}</code></td><td><strong>{item.value}</strong>{item.unit ? ` ${item.unit}` : ""}</td><td>{item.note ?? "—"}</td></tr>)}</tbody></table></div>;
+}
+
+/**
+ * 长报文按“报文结构 / 历史记录 / 当前与设备”分区浏览。
+ * 历史记录采用记录选择器与单条详情，避免 12 条记录全部纵向展开。
+ */
+function FieldExplanation({ result, selectedField, onSelect }: { result: ParseResult; selectedField: ParsedField | null; onSelect: (field: ParsedField) => void }) {
+  const [section, setSection] = useState<"structure" | "history" | "current">("structure");
+  const [activeRecord, setActiveRecord] = useState(1);
+  const [currentGroup, setCurrentGroup] = useState<"measurement" | "network" | "status">("measurement");
+  const historyPattern = /^历史第\s+(\d+)\s+条/;
+  const historyIndexes = result.fields
+    .map((item, index) => historyPattern.test(item.name) ? index : -1)
+    .filter((index) => index >= 0);
+  if (!historyIndexes.length) return <FieldTable fields={result.fields} selectedField={selectedField} onSelect={onSelect}/>;
+
+  const firstHistoryIndex = historyIndexes[0];
+  const lastHistoryIndex = historyIndexes.at(-1) ?? firstHistoryIndex;
+  const beforeHistory = result.fields.slice(0, firstHistoryIndex);
+  const afterHistory = result.fields.slice(lastHistoryIndex + 1);
+  const grouped = new Map<number, ParsedField[]>();
+  result.fields.slice(firstHistoryIndex, lastHistoryIndex + 1).forEach((item) => {
+    const recordNumber = Number(item.name.match(historyPattern)?.[1]);
+    if (!Number.isFinite(recordNumber)) return;
+    grouped.set(recordNumber, [...(grouped.get(recordNumber) ?? []), item]);
+  });
+  const groups = [...grouped.entries()].sort(([left], [right]) => left - right);
+  const bytesPerRecord = groups[0]?.[1].reduce((sum, item) => sum + item.length, 0) ?? 0;
+  const is9025 = result.dataIdentifier === "9025";
+  const selectedHistory = groups.find(([recordNumber]) => recordNumber === activeRecord) ?? groups[0];
+  const selectedHistoryItem = selectedHistory ? result.history[selectedHistory[0] - 1] : undefined;
+  const networkPattern = /信号|覆盖|PCI|IMEI|IMSI/i;
+  const measurementPattern = /当前|电压/;
+  const currentGroups = {
+    measurement: afterHistory.filter((item) => measurementPattern.test(item.name) && !networkPattern.test(item.name)),
+    network: afterHistory.filter((item) => networkPattern.test(item.name)),
+    status: afterHistory.filter((item) => !measurementPattern.test(item.name) && !networkPattern.test(item.name)),
+  };
+  const currentOptions = [
+    { id: "measurement" as const, label: "当前计量", fields: currentGroups.measurement },
+    { id: "network" as const, label: "网络身份", fields: currentGroups.network },
+    { id: "status" as const, label: "状态校验", fields: currentGroups.status },
+  ].filter((item) => item.fields.length > 0);
+  const activeCurrent = currentOptions.find((item) => item.id === currentGroup) ?? currentOptions[0];
+  const historyFieldLabel = (name: string) => name.replace(/^历史第\s+\d+\s+条[·：:\s]*/, "");
+
+  return <div className="field-explanation">
+    <div className="field-section-tabs" role="tablist" aria-label="字段解释分区">
+      <button className={section === "structure" ? "active" : ""} type="button" role="tab" aria-selected={section === "structure"} onClick={() => setSection("structure")}><span>报文结构</span><em>{beforeHistory.length}</em></button>
+      <button className={section === "history" ? "active" : ""} type="button" role="tab" aria-selected={section === "history"} onClick={() => setSection("history")}><span>历史记录</span><em>{groups.length}</em></button>
+      {afterHistory.length > 0 && <button className={section === "current" ? "active" : ""} type="button" role="tab" aria-selected={section === "current"} onClick={() => setSection("current")}><span>当前与设备</span><em>{afterHistory.length}</em></button>}
+    </div>
+
+    {section === "structure" && <FieldTable fields={beforeHistory} selectedField={selectedField} onSelect={onSelect}/>}
+
+    {section === "history" && selectedHistory && <section className="history-browser" aria-label="历史采集记录">
+      <header><div><strong>历史采集记录</strong><span>{is9025 ? "选择一条记录查看 A / B / C / D 四项明细" : `${result.dataIdentifier} 每条为一个采集时点累计量`}</span></div><em>{groups.length} 条 · {bytesPerRecord} Bytes / 条</em></header>
+      <div className="history-record-picker" role="list" aria-label="选择历史记录">{groups.map(([recordNumber, fields]) => {
+        const historyItem = result.history[recordNumber - 1];
+        const primaryField = fields.find((item) => item.name.includes("正向累计")) ?? fields[0];
+        const displayTime = historyItem?.collectTime?.split(" ").at(-1) ?? "—";
+        return <button className={selectedHistory[0] === recordNumber ? "active" : ""} key={recordNumber} type="button" role="listitem" onClick={() => { setActiveRecord(recordNumber); onSelect(primaryField); }}><span>第 {recordNumber} 条</span><strong>{displayTime}</strong><small>{primaryField.value}{primaryField.unit ? ` ${primaryField.unit}` : ""}</small></button>;
+      })}</div>
+      <article className="history-record-detail">
+        <header><div><strong>第 {selectedHistory[0]} 条详情</strong><span>{selectedHistoryItem?.collectTime ?? "采集时间未提供"}</span></div><code>偏移 {selectedHistory[1][0].offset}–{(selectedHistory[1].at(-1) ?? selectedHistory[1][0]).offset + (selectedHistory[1].at(-1) ?? selectedHistory[1][0]).length - 1}</code></header>
+        <div className="history-detail-grid">{selectedHistory[1].map((item) => <button className={selectedField === item ? "is-selected" : ""} key={`${item.offset}-${item.name}`} type="button" onMouseEnter={() => onSelect(item)} onFocus={() => onSelect(item)} onClick={() => onSelect(item)}><span>{historyFieldLabel(item.name)}</span><strong>{item.value}{item.unit ? ` ${item.unit}` : ""}</strong><code>{item.raw}</code></button>)}</div>
+      </article>
+    </section>}
+
+    {section === "current" && activeCurrent && <section className="current-field-browser">
+      <div className="current-field-tabs" role="tablist" aria-label="当前值与设备字段分组">{currentOptions.map((item) => <button className={activeCurrent.id === item.id ? "active" : ""} type="button" role="tab" aria-selected={activeCurrent.id === item.id} key={item.id} onClick={() => setCurrentGroup(item.id)}>{item.label}<em>{item.fields.length}</em></button>)}</div>
+      <FieldTable fields={activeCurrent.fields} selectedField={selectedField} onSelect={onSelect}/>
+    </section>}
+  </div>;
+}
+
 function initialResult(): ParseResult | null {
   try { return parseWithRegistry(parseHex(samples.cjt188.value)); } catch { return null; }
 }
 
 /** 字节地图与字段表共享选中状态，便于从业务字段反查原始报文。 */
 function ByteMap({ result, selectedField, onSelect }: { result: ParseResult; selectedField: ParsedField | null; onSelect: (field: ParsedField | null) => void }) {
+  const [hoveredByte, setHoveredByte] = useState<{ index: number; x: number; y: number } | null>(null);
   const ownerAt = (index: number) => result.fields.find((item) => index >= item.offset && index < item.offset + item.length);
+  const hoveredOwner = hoveredByte ? ownerAt(hoveredByte.index) : null;
+  const showByteTooltip = (element: HTMLButtonElement, index: number) => {
+    const rect = element.getBoundingClientRect();
+    const safeX = Math.min(Math.max(rect.left + rect.width / 2, 150), window.innerWidth - 150);
+    setHoveredByte({ index, x: safeX, y: rect.top });
+  };
   return <div className="byte-map-wrap">
     <div className="byte-map" aria-label="HEX 字节地图">{result.rawBytes.map((value, index) => {
       const owner = ownerAt(index);
       const selected = selectedField && index >= selectedField.offset && index < selectedField.offset + selectedField.length;
-      return <button className={`byte-chip tone-${owner?.tone ?? "plain"}${selected ? " is-selected" : ""}`} key={`${index}-${value}`} type="button" onMouseEnter={() => onSelect(owner ?? null)} onFocus={() => onSelect(owner ?? null)}>
+      return <button aria-label={`偏移 ${index}，字节 ${hex([value])}${owner ? `，${owner.name}` : "，未归属字段"}`} className={`byte-chip tone-${owner?.tone ?? "plain"}${selected ? " is-selected" : ""}`} key={`${index}-${value}`} type="button" onMouseEnter={(event) => { onSelect(owner ?? null); showByteTooltip(event.currentTarget, index); }} onMouseLeave={() => setHoveredByte(null)} onFocus={(event) => { onSelect(owner ?? null); showByteTooltip(event.currentTarget, index); }} onBlur={() => setHoveredByte(null)}>
         <small>{index.toString(16).padStart(2, "0").toUpperCase()}</small>{hex([value])}
       </button>;
     })}</div>
+    {hoveredByte && <div className="byte-hover-card" role="tooltip" style={{ left: hoveredByte.x, top: hoveredByte.y }}><header><strong>{hoveredOwner?.name ?? "未归属字段"}</strong><code>偏移 {hoveredByte.index} · {hex([result.rawBytes[hoveredByte.index]])}</code></header>{hoveredOwner && <><p><span>解析值</span><strong>{hoveredOwner.value}{hoveredOwner.unit ? ` ${hoveredOwner.unit}` : ""}</strong></p><small>{hoveredOwner.note ?? `字段范围 ${hoveredOwner.offset}–${hoveredOwner.offset + hoveredOwner.length - 1}`}</small></>}</div>}
     <div className="byte-selection">{selectedField ? <><strong>{selectedField.name}</strong><span>偏移 {selectedField.offset} · {selectedField.length} Bytes · {selectedField.value}{selectedField.unit ? ` ${selectedField.unit}` : ""}</span></> : <span>悬停或聚焦字节，查看所属字段和偏移。</span>}</div>
   </div>;
 }
@@ -300,7 +387,7 @@ export function ProtocolStudio() {
                     return <section className={`overview-group overview-${section.id}`} data-count={visibleItems.length} key={section.id}><h3><span>{section.title}</span><em>{visibleItems.length} 项</em></h3><div className="metric-grid">{visibleItems.map((item) => <article key={item.key}><span>{item.label}</span><strong>{formatMetric(item.value, item.unit)}</strong>{item.note && <small>{item.note}</small>}</article>)}</div></section>;
                   })}</div>
                 </>}
-                {activeTab === "fields" && <div className="table-scroll"><table><thead><tr><th>偏移</th><th>字段</th><th>原始字节</th><th>解析值</th><th>说明</th></tr></thead><tbody>{result.fields.map((item) => <tr className={selectedField === item ? "is-selected" : ""} key={`${item.offset}-${item.name}`} onMouseEnter={() => setSelectedField(item)} onClick={() => setSelectedField(item)}><td>{item.offset}–{item.offset + Math.max(item.length - 1, 0)}</td><td>{item.name}</td><td><code>{item.raw || "—"}</code></td><td><strong>{item.value}</strong>{item.unit ? ` ${item.unit}` : ""}</td><td>{item.note ?? "—"}</td></tr>)}</tbody></table></div>}
+                {activeTab === "fields" && <FieldExplanation result={result} selectedField={selectedField} onSelect={setSelectedField}/>}
                 {activeTab === "bytes" && <ByteMap result={result} selectedField={selectedField} onSelect={setSelectedField}/>} 
                 {activeTab === "history" && (result.history.length ? <div className="table-scroll"><table><thead><tr><th>采集时间</th><th>正向累计</th><th>反向累计</th><th>瞬时流量</th><th>压力</th></tr></thead><tbody>{result.history.map((item, index) => <tr key={`${item.collectTime}-${index}`}><td>{item.collectTime}</td><td>{item.forwardFlow ?? "—"}</td><td>{item.reverseFlow ?? "—"}</td><td>{item.instantFlow ?? "—"}</td><td>{item.pressure ?? "—"}</td></tr>)}</tbody></table></div> : <div className="empty-tab"><span>↺</span><strong>这条报文没有历史数据</strong><p>可在样例库载入沃特曼 9021 报文体验历史数据解析。</p></div>)}
                 {activeTab === "diagnostics" && <div className="diagnostic-list">{result.diagnostics.map((item, index) => <article className={`diag-${item.level}`} key={`${item.text}-${index}`}><span>{item.level === "ok" ? "✓" : item.level === "warn" ? "!" : "×"}</span><div><strong>{item.level === "ok" ? "检查通过" : item.level === "warn" ? "需要关注" : "解析错误"}</strong><p>{item.text}</p></div></article>)}</div>}

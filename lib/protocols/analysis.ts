@@ -33,6 +33,16 @@ function flowText(result: ParseResult, key: string): string {
   return `${value.toLocaleString("zh-CN", { maximumFractionDigits: 3 })} m³`;
 }
 
+/** 按协议挑选实际存在的网络指标，避免所有水表都套用固定三项信号模板。 */
+function signalText(result: ParseResult, definitions: Array<{ key: string; label: string; unit?: string }>): string {
+  const parts = definitions.flatMap(({ key, label, unit }) => {
+    const value = result.metrics[key];
+    if (value === null || value === undefined || value === "" || value === "—") return [];
+    return [`${label} ${value}${unit ? ` ${unit}` : ""}`];
+  });
+  return parts.join(" · ") || "报文未提供";
+}
+
 /** 判断四组指定数据是否完整，不额外推断设备或信号质量。 */
 function resolveLevel(result: ParseResult, items: AnalysisItem[]): AnalysisLevel {
   if (result.diagnostics.some((item) => item.level === "bad")) return "abnormal";
@@ -47,9 +57,13 @@ function buildCjt188Summary(result: ParseResult): AnalysisSummary {
     { key: "method", label: "上报方式", value: metricText(result, "reportReason") },
     {
       key: "signals",
-      label: "信号值",
-      value: `RSSI ${metricText(result, "rssi")} · RSRQ ${metricText(result, "rsrq")} · RSRP ${metricText(result, "rsrp")}`,
-      note: "协议原始值，未进行信号质量分级",
+      label: "4G 信号值",
+      value: signalText(result, [
+        { key: "rssi", label: "RSSI" },
+        { key: "rsrq", label: "RSRQ" },
+        { key: "rsrp", label: "RSRP" },
+      ]),
+      note: "Joymeter 协议上报的 RSSI、RSRQ、RSRP 原始值",
     },
   ];
   const level = resolveLevel(result, items);
@@ -71,9 +85,16 @@ function buildWotmanSummary(result: ParseResult): AnalysisSummary {
     { key: "method", label: "上报方式", value: metricText(result, "reportReason") },
     {
       key: "signals",
-      label: "信号值",
-      value: `CSQ ${metricText(result, "csq")} · RSRQ ${metricText(result, "rsrq")} · RSRP ${metricText(result, "rsrp")}`,
-      note: "协议原始值，未进行信号质量分级",
+      label: "网络与信号",
+      value: signalText(result, [
+        { key: "csq", label: "CSQ" },
+        { key: "rsrp", label: "RSRP", unit: "dBm" },
+        { key: "rsrq", label: "RSRQ", unit: "dBm" },
+        { key: "snr", label: "SNR", unit: "dB" },
+        { key: "ecl", label: "ECL" },
+        { key: "pci", label: "PCI" },
+      ]),
+      note: "沃特曼协议提供的蜂窝网络参数",
     },
   ];
   const level = resolveLevel(result, items);
@@ -82,7 +103,7 @@ function buildWotmanSummary(result: ParseResult): AnalysisSummary {
     statusLabel: level === "normal" ? "数据完整" : level === "abnormal" ? "解析异常" : "部分缺失",
     items,
     recommendation: level === "normal"
-      ? "结合项目现场设定的信号阈值判断通信质量。"
+      ? "结合项目现场阈值综合判断 CSQ、RSRP、RSRQ、SNR 与覆盖等级。"
       : "当前报文未包含完整上报信息，建议结合字段解释进行人工确认。",
   };
 }

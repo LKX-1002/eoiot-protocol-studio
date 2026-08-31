@@ -42,6 +42,16 @@ function typedValue(type: string, valueBytes: number[], decimals: number, floatE
   return null;
 }
 
+/** 把 9025 的 A-F 类型字节翻译为字段表中的编码说明。 */
+function typedValueNote(type: string, byteLength: number, decimals: number): string {
+  if (type === "1") return `类型 1：${byteLength} 字节 HEX，小端，${decimals} 位小数`;
+  if (type === "2") return `类型 2：${byteLength} 字节 BCD，小端，${decimals} 位小数`;
+  if (type === "3") return byteLength === 5
+    ? "类型 3：前 4 字节为 IEEE754 Float，第 5 字节保留"
+    : "类型 3：4 字节 IEEE754 Float";
+  return `未知类型 ${type || "—"}`;
+}
+
 /** 把 BCD 字节原样拼为字符串，避免 IMEI/IMSI 超过 JavaScript 安全整数范围。 */
 function bcdText(bytes: number[]): string {
   if (!bytes.length || bytes.some((value) => (value & 0x0f) > 9 || (value >> 4) > 9)) return "—";
@@ -169,6 +179,7 @@ function parse9025(bytes: number[], index: number, options: ParseOptions): BigWa
   const recordOffset = index + 15;
   const floatEndian = options.floatEndian ?? "be";
   const firstTimeMs = firstTime === "—" ? Number.NaN : new Date(firstTime.replace(" ", "T")).getTime();
+  const historyFields: ParseResult["fields"] = [];
 
   for (let i = 0; i < dataNumber; i += 1) {
     const offset = recordOffset + i * 17;
@@ -179,14 +190,31 @@ function parse9025(bytes: number[], index: number, options: ParseOptions): BigWa
     const collectTime = Number.isFinite(firstTimeMs)
       ? new Date(firstTimeMs + intervalMinutes * 60_000 * i).toLocaleString("zh-CN", { hour12: false })
       : firstTime;
+    const forwardBytes = safeSlice(bytes, offset, 5);
+    const reverseBytes = safeSlice(bytes, offset + 5, 4);
+    const instantBytes = safeSlice(bytes, offset + 9, 4);
+    const pressureBytes = safeSlice(bytes, offset + 13, 4);
+    const forwardFlow = typedValue(aType, forwardBytes, aType === "1" ? 0 : 2, floatEndian);
+    const reverseFlow = typedValue(bType, reverseBytes, bType === "1" ? 0 : 2, floatEndian);
+    const instantFlow = typedValue(cType, instantBytes, 3, floatEndian);
+    const pressure = typedValue(dType, pressureBytes, 3, floatEndian);
     result.history.push({
       collectTime,
-      forwardFlow: typedValue(aType, safeSlice(bytes, offset, 5), aType === "1" ? 0 : 2, floatEndian) ?? undefined,
+      forwardFlow: forwardFlow ?? undefined,
       // 原 Java 源码漏掉了 System.arraycopy；此处按协议读取真实 B 字段。
-      reverseFlow: typedValue(bType, safeSlice(bytes, offset + 5, 4), bType === "1" ? 0 : 2, floatEndian) ?? undefined,
-      instantFlow: typedValue(cType, safeSlice(bytes, offset + 9, 4), 3, floatEndian) ?? undefined,
-      pressure: typedValue(dType, safeSlice(bytes, offset + 13, 4), 3, floatEndian) ?? undefined,
+      reverseFlow: reverseFlow ?? undefined,
+      instantFlow: instantFlow ?? undefined,
+      pressure: pressure ?? undefined,
     });
+    // 9025 的一条历史记录由 A(5B)+B(4B)+C(4B)+D(4B) 组成，逐项展示便于协议联调。
+    const rowLabel = `历史第 ${i + 1} 条`;
+    const timeNote = collectTime === "—" ? "采集时间无法识别" : `采集时间 ${collectTime}`;
+    historyFields.push(
+      field(bytes, offset, 5, `${rowLabel} · 正向累计流量 A`, formatNumber(forwardFlow, 3), { unit: "m³", note: `${timeNote}；${typedValueNote(aType, 5, aType === "1" ? 0 : 2)}`, tone: "value" }),
+      field(bytes, offset + 5, 4, `${rowLabel} · 反向累计流量 B`, formatNumber(reverseFlow, 3), { unit: "m³", note: typedValueNote(bType, 4, bType === "1" ? 0 : 2), tone: "value" }),
+      field(bytes, offset + 9, 4, `${rowLabel} · 瞬时流量 C`, formatNumber(instantFlow, 3), { unit: "m³/h", note: typedValueNote(cType, 4, 3), tone: "value" }),
+      field(bytes, offset + 13, 4, `${rowLabel} · 压力 D`, formatNumber(pressure, 3), { unit: "MPa", note: typedValueNote(dType, 4, 3), tone: "value" }),
+    );
   }
 
   // 历史区之后是当前 A-F 数据，使用游标顺序读取以降低手工偏移出错概率。
@@ -243,20 +271,26 @@ function parse9025(bytes: number[], index: number, options: ParseOptions): BigWa
     field(bytes, firstTimeOffset, 5, "首条采集时间", firstTime, { note: "分、时、日、月、年，BCD", tone: "meta" }),
     field(bytes, index + 11, 1, "采集间隔", String(intervalMinutes), { unit: "分钟", tone: "meta" }),
     field(bytes, typeOffset, 3, "A-F 数据类型", typeHex, { note: "1=整数，2=BCD，3=Float", tone: "meta" }),
-    field(bytes, recordOffset, dataNumber * 17, "历史数据区", `${result.history.length} 条`, { note: "每条 17 字节", tone: "value" }),
+    ...historyFields,
     field(bytes, forwardOffset, 5, "当前正向累计流量 A", formatNumber(result.forwardFlow, 3), { unit: "m³", note: `类型 ${aType}`, tone: "value" }),
     field(bytes, reverseOffset, 4, "当前反向累计流量 B", formatNumber(result.reverseFlow, 3), { unit: "m³", note: `类型 ${bType}`, tone: "value" }),
     field(bytes, instantOffset, 4, "当前瞬时流量 C", formatNumber(result.instantFlow, 3), { unit: "m³/h", note: `类型 ${cType}`, tone: "value" }),
     field(bytes, pressureOffset, 4, "当前压力 D", formatNumber(result.pressure, 3), { unit: "MPa", note: `类型 ${dType}`, tone: "value" }),
     field(bytes, temperatureOffset, 4, "当前温度 E", formatNumber(result.temperature, 3), { unit: "℃", note: `类型 ${eType}`, tone: "value" }),
     field(bytes, meterVoltageOffset, 4, "水表电池电压 F", formatNumber(result.meterVoltage, 3), { unit: "V", note: `类型 ${fType}`, tone: "status" }),
-    field(bytes, collectorVoltageOffset, 2, "采集器电压", formatNumber(result.collectorVoltage, 2), { unit: "V", note: "BCD，小端", tone: "status" }),
-    field(bytes, networkOffset, 10, "蜂窝网络指标", `CSQ ${result.csq} / RSRP ${result.rsrp} / RSRQ ${result.rsrq} / SNR ${result.snr}`, { note: `含 ECL ${result.ecl}、PCI ${result.pci}`, tone: "status" }),
-    field(bytes, imeiOffset, 8, "IMEI", result.imei, { note: "BCD，保持字节顺序", tone: "meta" }),
-    field(bytes, imsiOffset, 8, "IMSI", result.imsi, { note: "BCD，保持字节顺序", tone: "meta" }),
-    field(bytes, countersOffset, 2, "通信成功次数", String(result.successCount), { note: "无符号整数，小端", tone: "meta" }),
-    field(bytes, countersOffset + 2, 2, "通信失败次数", String(result.failureCount), { note: "无符号整数，小端", tone: "meta" }),
-    field(bytes, realtimeOffset, 7, "设备实时时间", result.collectTime, { note: "秒、分、时、日、月、年、世纪，BCD", tone: "meta" }),
+    field(bytes, collectorVoltageOffset, 2, "采集器电压", formatNumber(result.collectorVoltage, 2), { unit: "V", note: "2 字节 BCD，小端，2 位小数", tone: "status" }),
+    // 网络指标按协议逐项占位，禁止合并成一行后隐藏各字段的真实偏移。
+    field(bytes, networkOffset, 1, "信号指示 CSQ", formatNumber(result.csq, 0), { note: "1 字节 BCD；有效范围 1-31，99 表示信道无效", tone: "status" }),
+    field(bytes, networkOffset + 1, 2, "信号强度 RSRP", formatNumber(result.rsrp, 0), { unit: "dBm", note: "2 字节有符号 HEX，小端", tone: "status" }),
+    field(bytes, networkOffset + 3, 2, "信号质量 RSRQ", formatNumber(result.rsrq, 0), { unit: "dBm", note: "2 字节有符号 HEX，小端", tone: "status" }),
+    field(bytes, networkOffset + 5, 2, "信噪比 SNR", formatNumber(result.snr, 0), { unit: "dB", note: "2 字节有符号 HEX，小端", tone: "status" }),
+    field(bytes, networkOffset + 7, 1, "覆盖等级 ECL", formatNumber(result.ecl, 0), { note: "1 字节 HEX；正常范围 0-2，FFH 表示未知", tone: "status" }),
+    field(bytes, networkOffset + 8, 2, "基站 PCI 编号", result.pci, { note: "2 字节 BCD，高字节在前", tone: "status" }),
+    field(bytes, imeiOffset, 8, "NB 模组设备识别码 IMEI", result.imei, { note: "8 字节 BCD，15 位数字，最高位补 0", tone: "meta" }),
+    field(bytes, imsiOffset, 8, "USIM 卡识别码 IMSI", result.imsi, { note: "8 字节 BCD，15 位数字，最高位补 0", tone: "meta" }),
+    field(bytes, countersOffset, 2, "累计上线成功次数", String(result.successCount), { note: "2 字节无符号整数，小端", tone: "meta" }),
+    field(bytes, countersOffset + 2, 2, "累计上线失败次数", String(result.failureCount), { note: "2 字节无符号整数，小端", tone: "meta" }),
+    field(bytes, realtimeOffset, 7, "采集器实时时间", result.collectTime, { note: "秒、分、时、日、月、年、世纪，BCD", tone: "meta" }),
     field(bytes, statusOffset, 2, "仪表状态", `${result.valveStatus} / ${result.statusInfo}`, { note: "2 字节位图，小端", tone: "status" }),
     field(bytes, warningOffset, 3, "告警信息", result.warnings.join("、") || "无告警", { tone: "status" }),
     field(bytes, versionOffset, 2, "硬件版本", result.hardwareVersion, { note: "BCD，小端", tone: "meta" }),
@@ -282,17 +316,26 @@ function parse902x(bytes: number[], index: number, di: "9021" | "9023", options:
   const intervalMinutes = bytes[index + 11] ?? 0;
   const historyOffset = index + 12;
   const firstTimeMs = firstTime === "—" ? Number.NaN : new Date(firstTime.replace(" ", "T")).getTime();
+  const historyFields: ParseResult["fields"] = [];
   // 历史区只记录累计流量，采集时间由首条时间和间隔推算。
   for (let i = 0; i < dataNumber; i += 1) {
-    const raw = safeSlice(bytes, historyOffset + i * valueLength, valueLength);
+    const offset = historyOffset + i * valueLength;
+    const raw = safeSlice(bytes, offset, valueLength);
     if (raw.length !== valueLength) break;
     const parsed = bcdLittleEndian(raw, di === "9023" ? 4 : 2);
+    const collectTime = Number.isFinite(firstTimeMs)
+      ? new Date(firstTimeMs + intervalMinutes * 60_000 * i).toLocaleString("zh-CN", { hour12: false })
+      : firstTime;
     result.history.push({
-      collectTime: Number.isFinite(firstTimeMs)
-        ? new Date(firstTimeMs + intervalMinutes * 60_000 * i).toLocaleString("zh-CN", { hour12: false })
-        : firstTime,
+      collectTime,
       forwardFlow: parsed ?? undefined,
     });
+    // 9021 每条仅含 4 字节累计流量，9023 每条仅含 5 字节累计流量；不能套用 9025 的 17 字节结构。
+    historyFields.push(field(bytes, offset, valueLength, `历史第 ${i + 1} 条 · 采集时点累计流量`, formatNumber(parsed, di === "9023" ? 4 : 2), {
+      unit: "m³",
+      note: `${collectTime === "—" ? "采集时间无法识别" : `采集时间 ${collectTime}`}；${valueLength} 字节 BCD，小端，${di === "9023" ? 4 : 2} 位小数`,
+      tone: "value",
+    }));
   }
   // 当前累计量之后按照 Java 源码顺序读取瞬时量和通信模块信息。
   let cursor = historyOffset + dataNumber * valueLength;
@@ -341,17 +384,22 @@ function parse902x(bytes: number[], index: number, di: "9021" | "9023", options:
     field(bytes, index + 5, 1, "历史数据条数", String(dataNumber), { tone: "meta" }),
     field(bytes, index + 6, 5, "首条采集时间", firstTime, { note: "分、时、日、月、年，BCD", tone: "meta" }),
     field(bytes, index + 11, 1, "采集间隔", String(intervalMinutes), { unit: "分钟", tone: "meta" }),
-    field(bytes, historyOffset, dataNumber * valueLength, "历史累计流量", `${result.history.length} 条`, { tone: "value" }),
+    ...historyFields,
     field(bytes, currentOffset, valueLength, "当前累计流量", formatNumber(result.forwardFlow, 4), { unit: "m³", note: `BCD，小端，${di === "9023" ? 4 : 2} 位小数`, tone: "value" }),
     field(bytes, instantOffset, 2, "瞬时流量", formatNumber(result.instantFlow, 2), { unit: "m³/h", note: "无符号整数，小端，2 位小数", tone: "value" }),
     field(bytes, sensorOffset, valueLength, di === "9023" ? "传感器数据与保留字" : "保留字段", hex(safeSlice(bytes, sensorOffset, valueLength)), { tone: "meta" }),
-    field(bytes, meterVoltageOffset, 2, "水表电池电压", formatNumber(result.meterVoltage, 2), { unit: "V", note: "BCD，小端", tone: "status" }),
-    field(bytes, networkOffset, 10, "蜂窝网络指标", `CSQ ${result.csq} / RSRP ${result.rsrp} / RSRQ ${result.rsrq} / SNR ${result.snr}`, { note: `含 ECL ${result.ecl}、PCI ${result.pci}`, tone: "status" }),
-    field(bytes, imeiOffset, 8, "IMEI", result.imei, { note: "BCD，保持字节顺序", tone: "meta" }),
-    field(bytes, imsiOffset, 8, "IMSI", result.imsi, { note: "BCD，保持字节顺序", tone: "meta" }),
-    field(bytes, countersOffset, 2, "通信成功次数", String(result.successCount), { note: "无符号整数，小端", tone: "meta" }),
-    field(bytes, countersOffset + 2, 2, "通信失败次数", String(result.failureCount), { note: "无符号整数，小端", tone: "meta" }),
-    field(bytes, realtimeOffset, 7, "设备实时时间", result.collectTime, { note: "秒、分、时、日、月、年、世纪，BCD", tone: "meta" }),
+    field(bytes, meterVoltageOffset, 2, "水表电池电压", formatNumber(result.meterVoltage, 2), { unit: "V", note: "2 字节 BCD，小端，2 位小数", tone: "status" }),
+    field(bytes, networkOffset, 1, "信号指示 CSQ", formatNumber(result.csq, 0), { note: "1 字节 BCD；有效范围 1-31，99 表示信道无效", tone: "status" }),
+    field(bytes, networkOffset + 1, 2, "信号强度 RSRP", formatNumber(result.rsrp, 0), { unit: "dBm", note: "2 字节有符号 HEX，小端", tone: "status" }),
+    field(bytes, networkOffset + 3, 2, "信号质量 RSRQ", formatNumber(result.rsrq, 0), { unit: "dBm", note: "2 字节有符号 HEX，小端", tone: "status" }),
+    field(bytes, networkOffset + 5, 2, "信噪比 SNR", formatNumber(result.snr, 0), { unit: "dB", note: "2 字节有符号 HEX，小端", tone: "status" }),
+    field(bytes, networkOffset + 7, 1, "覆盖等级 ECL", formatNumber(result.ecl, 0), { note: "1 字节 HEX；正常范围 0-2，FFH 表示未知", tone: "status" }),
+    field(bytes, networkOffset + 8, 2, "基站 PCI 编号", result.pci, { note: "2 字节 BCD，高字节在前", tone: "status" }),
+    field(bytes, imeiOffset, 8, "NB 模组设备识别码 IMEI", result.imei, { note: "8 字节 BCD，15 位数字，最高位补 0", tone: "meta" }),
+    field(bytes, imsiOffset, 8, "USIM 卡识别码 IMSI", result.imsi, { note: "8 字节 BCD，15 位数字，最高位补 0", tone: "meta" }),
+    field(bytes, countersOffset, 2, "累计上线成功次数", String(result.successCount), { note: "2 字节无符号整数，小端", tone: "meta" }),
+    field(bytes, countersOffset + 2, 2, "累计上线失败次数", String(result.failureCount), { note: "2 字节无符号整数，小端", tone: "meta" }),
+    field(bytes, realtimeOffset, 7, "水表实时时间", result.collectTime, { note: "秒、分、时、日、月、年、世纪，BCD", tone: "meta" }),
     field(bytes, statusOffset, 2, "仪表状态", `${result.valveStatus} / ${result.statusInfo}`, { note: "2 字节位图，小端", tone: "status" }),
     field(bytes, warningOffset, 3, "告警信息", result.warnings.join("、") || "无告警", { tone: "status" }),
     field(bytes, versionOffset, 2, "硬件版本", result.hardwareVersion, { note: "BCD，小端", tone: "meta" }),
@@ -435,6 +483,10 @@ export const wotmanParser: ProtocolParser = {
     const dataLength = uint(safeSlice(bytes, controlOffset + 1, 2), "le");
     const checksumOffset = start + 12 + dataLength;
     const meterType = getWaterMeterType(bytes[start + 1]);
+    // 协议定义 81H 为设备上线主动发送；9025 的发送主体是采集器，9021/9023 的发送主体是水表。
+    const reportReason = bytes[controlOffset] === 0x81
+      ? dataIdentifier === "9025" ? "采集器主动上报" : "水表主动上报"
+      : "—";
     const baseFields = [
       ...(start > 0 ? [field(bytes, 0, start, "唤醒字节", `${start} 个 FE`, { note: "不参与 CS 计算", tone: "meta" })] : []),
       field(bytes, start, 1, "帧起始符", "68", { tone: "header" }),
@@ -517,6 +569,7 @@ export const wotmanParser: ProtocolParser = {
         softwareVersion: values.softwareVersion,
         successCount: values.successCount,
         failureCount: values.failureCount,
+        reportReason,
       },
       overviewSections,
       fields: [...baseFields, ...values.fields, ...endingFields],

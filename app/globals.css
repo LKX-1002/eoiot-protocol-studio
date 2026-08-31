@@ -5,10 +5,13 @@ button, select, textarea { font: inherit; }
 button, select { cursor: pointer; }
 
 body {
-  background: #eef2f4;
+  background: #f3f6f8;
   color: #17272d;
   font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
 }
+
+/* 浏览器底层背景与应用主题同步，避免滚动边缘或切换瞬间露出异色。 */
+body:has(.studio-app[data-theme="dark"]) { background: #0c1217; }
 
 /*
  * 白天主题的产品级设计令牌。
@@ -45,7 +48,6 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
-  transition: background .2s ease, color .2s ease;
 }
 
 /* 夜间主题：保持品牌青色，同时降低大面积背景亮度。 */
@@ -216,8 +218,90 @@ tbody tr:hover { background: var(--panel-soft); }
 td code { color: var(--brand); font-family: Consolas, "SFMono-Regular", monospace; white-space: nowrap; }
 td strong { font-weight: 500; }
 
+/* 字段解释表使用固定列宽，避免长报文的原始字节把前几列挤出可视区域。 */
+.field-table-scroll {
+  width: 100%;
+  scrollbar-gutter: stable;
+}
+.field-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.field-table .field-col-offset { width: 64px; }
+.field-table .field-col-name { width: 17%; }
+.field-table .field-col-raw { width: 31%; }
+.field-table .field-col-value { width: 22%; }
+.field-table .field-col-note { width: auto; }
+.field-table th,
+.field-table td {
+  min-width: 0;
+}
+.field-table td {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.field-table td code {
+  display: block;
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.65;
+}
+
+/* 长报文字段按业务阶段切换，只呈现当前需要阅读的一组内容。 */
+.field-explanation { display: grid; gap: 12px; min-width: 0; }
+.field-section-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+.field-section-tabs button { min-width: 0; min-height: 34px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; display: flex; align-items: center; justify-content: center; gap: 7px; background: transparent; color: var(--muted); font-size: 10px; }
+.field-section-tabs button:hover { color: var(--ink); }
+.field-section-tabs button.active { border-color: var(--line); background: var(--panel); color: var(--brand); box-shadow: 0 3px 10px color-mix(in srgb, #000 7%, transparent); }
+.field-section-tabs em,
+.current-field-tabs em { min-width: 18px; padding: 2px 5px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 10%, transparent); color: inherit; font-size: 8px; font-style: normal; }
+
+/* 历史记录采用“选择记录 + 单条详情”，避免十二条记录形成超长页面。 */
+.history-browser { min-width: 0; overflow: hidden; border: 1px solid color-mix(in srgb, var(--brand) 35%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--brand-soft) 22%, var(--panel)); }
+.history-browser > header { min-height: 48px; padding: 10px 13px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); }
+.history-browser > header strong { display: block; color: var(--ink); font-size: 11px; font-weight: 600; }
+.history-browser > header span { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; }
+.history-browser > header em { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: 9px; font-style: normal; white-space: nowrap; }
+.history-record-picker { padding: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 7px; border-bottom: 1px solid var(--line); }
+.history-record-picker button { min-width: 0; min-height: 55px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); text-align: left; }
+.history-record-picker button:hover { border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
+.history-record-picker button.active { border-color: var(--brand); background: var(--brand-soft); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 12%, transparent); }
+.history-record-picker span { display: block; color: var(--muted); font-size: 8px; }
+.history-record-picker strong { display: block; margin-top: 3px; overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.history-record-picker small { display: block; margin-top: 3px; overflow: hidden; color: var(--brand); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.history-record-detail { margin: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.history-record-detail > header { min-height: 44px; padding: 9px 11px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); background: var(--panel-soft); }
+.history-record-detail > header strong { display: block; font-size: 10px; font-weight: 600; }
+.history-record-detail > header span { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; }
+.history-record-detail > header code { flex: 0 0 auto; color: var(--faint); font-size: 8px; }
+.history-detail-grid { padding: 9px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.history-detail-grid button { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); color: var(--ink); text-align: left; }
+.history-detail-grid button:hover,
+.history-detail-grid button.is-selected { border-color: var(--brand); background: var(--brand-soft); }
+.history-detail-grid span { display: block; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.history-detail-grid strong { display: block; margin-top: 5px; font-size: 11px; font-weight: 600; }
+.history-detail-grid code { display: block; margin-top: 5px; overflow-wrap: anywhere; color: var(--brand); font-size: 8px; line-height: 1.5; }
+
+/* 当前设备字段再按计量、网络、状态细分，保持单屏信息密度。 */
+.current-field-browser { min-width: 0; display: grid; gap: 10px; }
+.current-field-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.current-field-tabs button { min-height: 31px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; background: var(--panel); color: var(--muted); font-size: 9px; }
+.current-field-tabs button:hover { color: var(--ink); }
+.current-field-tabs button.active { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
+
+@media (max-width: 760px) {
+  /* 手机端保留字段可读宽度，只在表格内部横向浏览。 */
+  .field-table { min-width: 720px; }
+  .field-section-tabs { grid-template-columns: 1fr; }
+  .field-section-tabs button { justify-content: space-between; }
+  .history-browser > header { align-items: flex-start; flex-direction: column; }
+  .history-record-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .history-detail-grid { grid-template-columns: 1fr; }
+}
+
 /* 字节地图颜色与字段 tone 保持一一对应。 */
-.byte-map-wrap { min-width: 0; }
+.byte-map-wrap { min-width: 0; overflow: visible; }
 .byte-ruler, .byte-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(30px, 1fr)); gap: 5px; }
 .byte-ruler { margin-bottom: 4px; color: var(--faint); font-family: Consolas, "SFMono-Regular", monospace; font-size: 7px; text-align: center; }
 .byte-chip { border: 1px solid transparent; border-radius: 6px; padding: 6px 3px; background: var(--panel-soft); color: var(--muted); font-family: Consolas, "SFMono-Regular", monospace; font-size: 9px; }
@@ -226,6 +310,15 @@ td strong { font-weight: 500; }
 .byte-chip.tone-value { background: var(--brand-soft); color: var(--brand); }
 .byte-chip.tone-check, .byte-chip.tone-status { background: var(--warning-soft); color: var(--warning); }
 .byte-chip.is-selected { border-color: currentColor; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 18%, transparent); }
+.byte-hover-card { position: fixed; z-index: 80; width: min(280px, calc(100vw - 24px)); padding: 11px 12px; transform: translate(-50%, calc(-100% - 10px)); border: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line)); border-radius: 10px; background: var(--shell); color: var(--ink); box-shadow: 0 12px 30px color-mix(in srgb, #000 24%, transparent); pointer-events: none; }
+.byte-hover-card::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 8px; height: 8px; transform: translateX(-50%) rotate(45deg); border-right: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line)); border-bottom: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line)); background: var(--shell); }
+.byte-hover-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.byte-hover-card header strong { font-size: 11px; font-weight: 600; line-height: 1.4; }
+.byte-hover-card header code { flex: 0 0 auto; color: var(--brand); font-size: 9px; }
+.byte-hover-card p { margin: 9px 0 0; padding-top: 8px; border-top: 1px solid var(--line); display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.byte-hover-card p span { color: var(--muted); font-size: 9px; }
+.byte-hover-card p strong { font-size: 11px; font-weight: 600; text-align: right; }
+.byte-hover-card > small { display: block; margin-top: 5px; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .byte-selection { min-height: 42px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 9px; }
 .byte-selection strong { color: var(--ink); font-weight: 500; }
 
