@@ -1,10 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128" role="img" aria-label="EOIOT 协议库标志">
-  <!-- 单个实色协议核心；三条数据轨道表达协议库中的结构化字段。 -->
-  <rect x="8" y="8" width="112" height="112" rx="27" fill="#087d72"/>
-  <g fill="#ffffff">
-    <circle cx="36" cy="40" r="6.5"/>
-    <circle cx="36" cy="64" r="6.5"/>
-    <circle cx="36" cy="88" r="6.5"/>
-  </g>
-  <path d="M52 40h38M52 64h48M52 88h30" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
+  <!-- 确认稿中的浅色单卡片；圆点和双线表达一条结构化协议记录。 -->
+  <rect x="8" y="8" width="112" height="112" rx="27" fill="#e2f4f0"/>
+  <circle cx="42" cy="64" r="9" fill="#087d72"/>
+  <path d="M61 48h39M61 78h28" fill="none" stroke="#087d72" stroke-width="11" stroke-linecap="round"/>
 </svg>

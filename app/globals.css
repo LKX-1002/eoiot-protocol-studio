@@ -96,9 +96,9 @@ body:has(.studio-app[data-theme="dark"]) { background: #0c1217; }
 
 .brand { width: 202px; display: flex; align-items: center; gap: 10px; }
 .brand-mark { width: 36px; height: 36px; display: block; flex: 0 0 auto; }
-.brand-logo-card { fill: var(--brand); }
-.brand-logo-node { fill: var(--brand-ink); opacity: .92; }
-.brand-logo-line { fill: none; stroke: var(--brand-ink); stroke-width: 3.2; stroke-linecap: round; }
+.brand-logo-card { fill: var(--brand-soft); }
+.brand-logo-detail { fill: var(--brand); }
+.brand-logo-line { fill: none; stroke: var(--brand); stroke-width: 3.8; stroke-linecap: round; }
 .brand div { display: flex; flex-direction: column; line-height: 1.15; }
 .brand strong { font-size: 14px; font-weight: 500; letter-spacing: .05em; }
 .brand small { color: var(--muted); font-size: 10px; }

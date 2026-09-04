@@ -27,16 +27,14 @@ function ToolIcon({ name }: { name: "paste" | "format" | "clear" | "copy" | "dow
 
 /**
  * 顶栏品牌标志使用内联 SVG，以便跟随应用的手动深浅色主题切换。
- * 实色卡片代表统一的协议核心，三条数据轨道代表协议库中的结构化字段。
- * 图形保持单一轮廓，在导航栏和浏览器小图标中也能清晰识别。
+ * 浅色单卡片代表统一的协议核心，圆点和双线代表结构化协议字段。
+ * 该结构与确认稿保持一致，并能在导航栏和浏览器小图标中清晰识别。
  */
 function BrandMark() {
   return <svg className="brand-mark" aria-hidden="true" viewBox="0 0 40 40">
     <rect className="brand-logo-card" x="1" y="1" width="38" height="38" rx="10"/>
-    <circle className="brand-logo-node" cx="10.5" cy="11.5" r="2.15"/>
-    <circle className="brand-logo-node" cx="10.5" cy="20" r="2.15"/>
-    <circle className="brand-logo-node" cx="10.5" cy="28.5" r="2.15"/>
-    <path className="brand-logo-line" d="M16 11.5h13M16 20h16M16 28.5h10"/>
+    <circle className="brand-logo-detail" cx="12.5" cy="20" r="3.1"/>
+    <path className="brand-logo-line" d="M19 14.8h13M19 25.2h9.5"/>
   </svg>;
 }
 
