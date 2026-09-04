@@ -1,4 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 128 128">
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128" role="img" aria-label="EOIOT 协议库标志">
+  <!-- 单个实色协议核心；三条数据轨道表达协议库中的结构化字段。 -->
   <rect x="8" y="8" width="112" height="112" rx="27" fill="#087d72"/>
   <g fill="#ffffff">
     <circle cx="36" cy="40" r="6.5"/>

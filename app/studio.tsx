@@ -25,6 +25,21 @@ function ToolIcon({ name }: { name: "paste" | "format" | "clear" | "copy" | "dow
   return <svg className="tool-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
+/**
+ * 顶栏品牌标志使用内联 SVG，以便跟随应用的手动深浅色主题切换。
+ * 实色卡片代表统一的协议核心，三条数据轨道代表协议库中的结构化字段。
+ * 图形保持单一轮廓，在导航栏和浏览器小图标中也能清晰识别。
+ */
+function BrandMark() {
+  return <svg className="brand-mark" aria-hidden="true" viewBox="0 0 40 40">
+    <rect className="brand-logo-card" x="1" y="1" width="38" height="38" rx="10"/>
+    <circle className="brand-logo-node" cx="10.5" cy="11.5" r="2.15"/>
+    <circle className="brand-logo-node" cx="10.5" cy="20" r="2.15"/>
+    <circle className="brand-logo-node" cx="10.5" cy="28.5" r="2.15"/>
+    <path className="brand-logo-line" d="M16 11.5h13M16 20h16M16 28.5h10"/>
+  </svg>;
+}
+
 /** 侧栏导航统一使用 18px 线性 SVG，保证图标线宽、基线和文字间距一致。 */
 function NavIcon({ name }: { name: "parser" | "library" | "sample" | "history" | "device" | "team" }) {
   const paths = {
@@ -329,7 +344,7 @@ export function ProtocolStudio() {
 
   return <main className="studio-app" data-theme={theme} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); parseFrame(); } }}>
     <header className="topbar">
-      <button className="brand brand-button" type="button" onClick={() => setView("studio")}><span className="brand-mark">EOI</span><span><strong>EOIOT</strong><small>Protocol Studio</small></span></button>
+      <button className="brand brand-button" type="button" onClick={() => setView("studio")} aria-label="返回协议解析工作台"><BrandMark/><span><strong>EOIOT</strong><small>Protocol Studio</small></span></button>
       <div className="workspace-switch"><strong>源一物联</strong><span>/ 协议研发空间</span></div>
       <span className="version-pill">V2 Preview</span>
       <button className="theme-toggle" type="button" onClick={toggleTheme} aria-label={theme === "light" ? "切换到深色主题" : "切换到浅色主题"}><span>{theme === "light" ? "◐" : "☀"}</span>{theme === "light" ? "切换深色" : "切换浅色"}</button>
@@ -371,7 +386,13 @@ export function ProtocolStudio() {
             {result ? <>
               <div className="result-hero"><div className="protocol-identity"><span className="success-mark">✓</span><div><p>识别到协议</p><h2>{result.protocol}</h2><span>{result.manufacturer} · {result.categoryLabel}</span></div></div><div className="confidence"><span>匹配度</span><strong>{result.confidence}%</strong></div></div>
               <div className="primary-metrics"><div><span>核心读数</span><strong>{result.coreValue}</strong></div><div><span>表号</span><strong>{result.meterNo}</strong></div><div><span>数据标识 DI</span><strong>{result.dataIdentifier}</strong></div><div><span>控制码</span><strong>{result.controlCode}</strong></div></div>
-              <div className="tabs" role="tablist">{tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>{tab.label}{tab.id === "history" && result.history.length > 0 && <em>{result.history.length}</em>}{tab.id === "diagnostics" && <em>{result.diagnostics.length}</em>}</button>)}</div>
+              <div className="tabs" role="tablist" aria-label="解析结果视图">{tabs.map((tab, index) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} tabIndex={activeTab === tab.id ? 0 : -1} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") return;
+                event.preventDefault();
+                const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+                setActiveTab(tabs[nextIndex].id);
+                (event.currentTarget.parentElement?.children[nextIndex] as HTMLButtonElement | undefined)?.focus();
+              }}>{tab.label}{tab.id === "history" && result.history.length > 0 && <em>{result.history.length}</em>}{tab.id === "diagnostics" && <em>{result.diagnostics.length}</em>}</button>)}</div>
               <div className="tab-content">
                 {activeTab === "overview" && <>
                   {analysis && <section className={`analysis-card analysis-${analysis.level}`} aria-label="分析结论">
@@ -404,6 +425,14 @@ export function ProtocolStudio() {
 
       {view === "records" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">LOCAL HISTORY</p><h1>本机解析记录</h1><span>最近 20 条成功解析，仅保存在当前浏览器。</span></div><div className="heading-actions"><button type="button" disabled={!records.length} onClick={clearRecords}>清空记录</button><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div></div>{records.length ? <div className="record-list">{records.map((record) => <article key={record.id}><div className="record-main"><span>{new Date(record.createdAt).toLocaleString("zh-CN", { hour12: false })}</span><h2>{record.protocol}</h2><p>表号 {record.meterNo} · {record.coreValue}</p></div><code>{record.raw}</code><div><button type="button" onClick={() => copyText(record.raw, "历史报文")}>复制</button><button className="primary-link" type="button" onClick={() => reuseRecord(record)}>重新解析</button></div></article>)}</div> : <div className="large-empty"><span>↺</span><h2>还没有解析记录</h2><p>完成一次报文解析后，它会自动出现在这里。</p><button className="primary-link" type="button" onClick={() => setView("samples")}>使用样例开始</button></div>}</section>}
     </div>
+
+    {/* 手机端使用固定底部导航，避免侧栏隐藏后协议库、样例和记录失去入口。 */}
+    <nav className="mobile-navigation" aria-label="手机端主导航">
+      <button className={view === "studio" ? "active" : ""} type="button" aria-current={view === "studio" ? "page" : undefined} onClick={() => setView("studio")}><NavIcon name="parser"/><span>协议解析</span></button>
+      <button className={view === "library" ? "active" : ""} type="button" aria-current={view === "library" ? "page" : undefined} onClick={() => setView("library")}><NavIcon name="library"/><span>协议库</span></button>
+      <button className={view === "samples" ? "active" : ""} type="button" aria-current={view === "samples" ? "page" : undefined} onClick={() => setView("samples")}><NavIcon name="sample"/><span>样例帧</span></button>
+      <button className={view === "records" ? "active" : ""} type="button" aria-current={view === "records" ? "page" : undefined} onClick={() => setView("records")}><NavIcon name="history"/><span>解析记录</span></button>
+    </nav>
     {toast && <div className="toast" role="status">✓ {toast}</div>}
   </main>;
 }

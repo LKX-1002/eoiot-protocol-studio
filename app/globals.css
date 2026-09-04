@@ -95,7 +95,10 @@ body:has(.studio-app[data-theme="dark"]) { background: #0c1217; }
 }
 
 .brand { width: 202px; display: flex; align-items: center; gap: 10px; }
-.brand-mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: var(--brand); color: var(--brand-ink); font-size: 12px; font-weight: 500; box-shadow: 0 6px 16px color-mix(in srgb, var(--brand) 24%, transparent); }
+.brand-mark { width: 36px; height: 36px; display: block; flex: 0 0 auto; }
+.brand-logo-card { fill: var(--brand); }
+.brand-logo-node { fill: var(--brand-ink); opacity: .92; }
+.brand-logo-line { fill: none; stroke: var(--brand-ink); stroke-width: 3.2; stroke-linecap: round; }
 .brand div { display: flex; flex-direction: column; line-height: 1.15; }
 .brand strong { font-size: 14px; font-weight: 500; letter-spacing: .05em; }
 .brand small { color: var(--muted); font-size: 10px; }
@@ -399,7 +402,7 @@ td strong { font-weight: 500; }
 .brand { width: calc(var(--sidebar-width) - 24px); }
 .brand-button { border: 0; background: transparent; color: var(--ink); padding: 0; text-align: left; }
 .brand-button > span:last-child { display: flex; flex-direction: column; line-height: 1.15; }
-.brand-mark { width: 42px; height: 38px; border-radius: 11px; font-size: 12px; letter-spacing: -.04em; }
+.brand-mark { width: 38px; height: 38px; }
 .brand strong { font-size: 15px; }
 .brand small { font-size: 11px; }
 .workspace-switch { font-size: 13px; }
@@ -584,6 +587,9 @@ tbody tr.is-selected { background: var(--brand-soft); }
 .large-empty p { margin: 0 0 18px; font-size: 12px; }
 .toast { position: fixed; z-index: 50; left: 50%; bottom: 28px; transform: translateX(-50%); padding: 10px 15px; border: 1px solid color-mix(in srgb, var(--brand) 35%, var(--line)); border-radius: 10px; background: var(--shell); color: var(--ink); box-shadow: var(--shadow); font-size: 12px; }
 
+/* 桌面端继续使用侧栏；手机底部导航仅在窄屏出现。 */
+.mobile-navigation { display: none; }
+
 /* 900px 以下收窄导航，为平板内容区留出空间。 */
 @media (max-width: 900px) {
   .app-grid { grid-template-columns: 72px minmax(0,1fr); }
@@ -604,6 +610,7 @@ tbody tr.is-selected { background: var(--brand-soft); }
 }
 
 @media (max-width: 760px) {
+  .studio-app { padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
   .topbar { height: 60px; padding: 0 12px; }
   .version-pill, .workspace-switch span { display: none; }
   .page { padding: 20px 12px 30px; }
@@ -622,6 +629,17 @@ tbody tr.is-selected { background: var(--brand-soft); }
   .metric-grid { grid-template-columns: 1fr 1fr; }
   .result-panel { min-height: 0; }
   .result-hero { padding: 16px; }
+  .tabs {
+    padding: 0 8px;
+    gap: 2px;
+    scroll-padding-inline: 8px;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-inline: contain;
+    /* 右侧渐隐表示仍有页签可横向滑动。 */
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 24px), transparent 100%);
+  }
+  .tabs button { flex: 0 0 auto; min-width: 74px; min-height: 46px; padding: 13px 9px 11px; scroll-snap-align: start; font-size: 11px; }
   .tab-content { min-height: 260px; padding: 14px; }
   .editor-toolbar, .json-toolbar { align-items: flex-start; flex-direction: column; padding-top: 9px; padding-bottom: 9px; }
   .editor-toolbar .tool-actions, .json-toolbar .tool-actions { width: 100%; overflow-x: auto; }
@@ -629,6 +647,42 @@ tbody tr.is-selected { background: var(--brand-soft); }
   .editor-status { align-items: flex-start; flex-direction: column; justify-content: center; padding-top: 7px; padding-bottom: 7px; }
   .record-list article { grid-template-columns: 1fr; gap: 12px; }
   .record-list article > code { white-space: normal; }
+
+  .mobile-navigation {
+    position: fixed;
+    z-index: 60;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    min-height: 64px;
+    padding: 5px 8px calc(5px + env(safe-area-inset-bottom));
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    border-top: 1px solid var(--line);
+    background: color-mix(in srgb, var(--shell) 94%, transparent);
+    box-shadow: 0 -10px 28px color-mix(in srgb, #000 12%, transparent);
+    backdrop-filter: blur(14px);
+  }
+  .mobile-navigation button {
+    min-width: 0;
+    min-height: 52px;
+    padding: 5px 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 3px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 10px;
+  }
+  .mobile-navigation button.active { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+  .mobile-navigation .nav-icon { width: 19px; height: 19px; }
+  .mobile-navigation button:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+  .toast { bottom: calc(78px + env(safe-area-inset-bottom)); }
 }
 
 @media (max-width: 450px) {
