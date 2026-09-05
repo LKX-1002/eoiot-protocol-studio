@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { hex, parseHex } from "@/lib/protocols/bytes";
 import { buildAnalysisSummary } from "@/lib/protocols/analysis";
 import { parseWithRegistry, parsers, validateWithRegistry } from "@/lib/protocols/registry";
@@ -26,15 +26,14 @@ function ToolIcon({ name }: { name: "paste" | "format" | "clear" | "copy" | "dow
 }
 
 /**
- * 顶栏品牌标志使用内联 SVG，以便跟随应用的手动深浅色主题切换。
- * 浅色单卡片代表统一的协议核心，圆点和双线代表结构化协议字段。
- * 该结构与确认稿保持一致，并能在导航栏和浏览器小图标中清晰识别。
+ * 两色协议窗口：圆点和短线复用底色，深浅主题通过品牌变量同步换色。
  */
 function BrandMark() {
   return <svg className="brand-mark" aria-hidden="true" viewBox="0 0 40 40">
     <rect className="brand-logo-card" x="1" y="1" width="38" height="38" rx="10"/>
-    <circle className="brand-logo-detail" cx="12.5" cy="20" r="3.1"/>
-    <path className="brand-logo-line" d="M19 14.8h13M19 25.2h9.5"/>
+    <rect className="brand-logo-window" x="9" y="13" width="22" height="16" rx="3.2"/>
+    <circle className="brand-logo-cutout" cx="13.6" cy="23.8" r="1.3"/>
+    <rect className="brand-logo-cutout" x="17.4" y="22.5" width="10.4" height="2.6" rx="1.3"/>
   </svg>;
 }
 
@@ -200,6 +199,7 @@ export function ProtocolStudio() {
   const [toast, setToast] = useState("");
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const rawInputRef = useRef<HTMLTextAreaElement>(null);
 
   /** 恢复主题与本机记录；数据不会离开当前浏览器。 */
   useEffect(() => {
@@ -221,6 +221,28 @@ export function ProtocolStudio() {
     const timer = window.setTimeout(() => setActionFeedback(null), 1400);
     return () => window.clearTimeout(timer);
   }, [actionFeedback]);
+
+  /**
+   * 输入框根据报文内容自动增高：短帧保持紧凑，长帧达到上限后内部滚动。
+   * 这里读取真实 scrollHeight，因此不会再按固定字节数提前换行或留下大块空白。
+   */
+  useLayoutEffect(() => {
+    const editor = rawInputRef.current;
+    if (!editor) return;
+    const fitEditorToContent = () => {
+      const compact = window.matchMedia("(max-width: 760px)").matches;
+      const minHeight = compact ? 156 : 168;
+      const maxHeight = compact ? 260 : 360;
+      editor.style.height = "0px";
+      const contentHeight = editor.scrollHeight;
+      const nextHeight = Math.min(Math.max(contentHeight, minHeight), maxHeight);
+      editor.style.height = `${nextHeight}px`;
+      editor.style.overflowY = contentHeight > nextHeight ? "auto" : "hidden";
+    };
+    fitEditorToContent();
+    window.addEventListener("resize", fitEditorToContent);
+    return () => window.removeEventListener("resize", fitEditorToContent);
+  }, [rawInput]);
 
   const inputState = useMemo(() => {
     try {
@@ -361,17 +383,17 @@ export function ProtocolStudio() {
       </nav><div className="local-note"><span className="secure-dot"/><strong>隐私安全</strong><p>解析与记录仅保存在本机</p></div></aside>
 
       {view === "studio" && <section className="page studio-page">
-        <div className="page-heading"><div><h1>协议解析工作台</h1><span>从原始 HEX 到字段、字节和诊断结果，一屏完成协议调试。</span></div><div className="heading-actions"><button type="button" onClick={() => fileInputRef.current?.click()}>导入文本</button><button type="button" onClick={() => setView("samples")}>打开样例库</button></div></div>
+        <div className="page-heading"><div><h1>协议解析工作台</h1><span>粘贴设备报文，快速查看字段、字节与诊断结果。</span></div><div className="heading-actions"><button type="button" onClick={() => fileInputRef.current?.click()}>导入文本</button><button type="button" onClick={() => setView("samples")}>打开样例库</button></div></div>
         <input ref={fileInputRef} className="visually-hidden" type="file" accept=".txt,.log,.hex,text/plain" onChange={importText}/>
 
         <div className="workbench">
           <section className="panel input-panel">
             <div className="panel-title"><div><span className="step">01</span><strong>输入原始帧</strong></div><span className="byte-count">{inputState.count} Bytes</span></div>
             <div className="input-body">
-              <div className="auto-recognition"><span className="secure-dot"/><div><strong>协议与端序自动识别</strong><p>同一输入框支持 Joymeter 小口径和沃特曼大口径报文，无需手动选择。</p></div></div>
+              <div className="auto-recognition"><ToolIcon name="format"/><div><strong>协议与端序自动识别</strong><p>同一输入框支持 Joymeter 小口径和沃特曼大口径报文，无需手动选择。</p></div></div>
               <div className={`hex-editor${!inputState.valid ? " has-error" : ""}`}>
                 <div className="editor-toolbar"><span className="editor-label"><ToolIcon name="code"/>HEX / RAW FRAME</span><div className="tool-actions"><button className={actionFeedback === "paste" ? "is-success" : ""} type="button" onClick={pasteFrame}>{actionFeedback === "paste" ? <ToolIcon name="check"/> : <ToolIcon name="paste"/>}<span>{actionFeedback === "paste" ? "已粘贴" : "粘贴"}</span></button><button className={actionFeedback === "format" ? "is-success" : ""} type="button" onClick={formatInput}>{actionFeedback === "format" ? <ToolIcon name="check"/> : <ToolIcon name="format"/>}<span>{actionFeedback === "format" ? "已格式化" : "格式化"}</span></button><button className={actionFeedback === "clear" ? "is-success" : ""} type="button" onClick={clearFrame}>{actionFeedback === "clear" ? <ToolIcon name="check"/> : <ToolIcon name="clear"/>}<span>{actionFeedback === "clear" ? "已清空" : "清空"}</span></button></div></div>
-                <div className="editor-main"><textarea value={rawInput} onChange={(event) => { setRawInput(event.target.value); setError(""); setResult(null); setSelectedField(null); setMessage("报文已修改，等待重新解析"); }} spellCheck={false} aria-label="原始十六进制报文" placeholder="粘贴 HEX 报文，支持空格、换行、逗号和 0x 前缀"/></div>
+                <div className="editor-main"><textarea ref={rawInputRef} value={rawInput} onChange={(event) => { setRawInput(event.target.value); setError(""); setResult(null); setSelectedField(null); setMessage("报文已修改，等待重新解析"); }} wrap="soft" spellCheck={false} aria-label="原始十六进制报文" placeholder="粘贴 HEX 报文，支持空格、换行、逗号和 0x 前缀"/></div>
                 <div className="editor-status">{inputState.valid && inputState.count > 0 ? <span className="valid">● {inputState.text}</span> : <span aria-hidden="true"/>}<span>本地处理 · 不上传</span></div>
               </div>
               <div className="input-actions"><button className="parse-button" type="button" disabled={!inputState.valid || !inputState.count} onClick={parseFrame}>识别并解析报文</button><button className="sample-button" type="button" onClick={() => useSample(sampleList[(sampleList.findIndex((item) => item.value === rawInput) + 1) % sampleList.length])}>换个样例</button></div>
