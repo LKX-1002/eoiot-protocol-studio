@@ -190,7 +190,7 @@ export const cjt188Parser: ProtocolParser = {
   category: "water",
   status: "ready",
 
-  /** 小口径使用 1 字节 L：从 68 起的总字节数固定等于 L + 13。 */
+  /** 小口径使用 1 字节 L：L 从 DI 起算至 CS 前一字节，总帧长固定等于 L + 13。 */
   detect(bytes) {
     const start = findFrameStart(bytes);
     if (start < 0 || bytes.length < start + 13) return 0;
@@ -217,8 +217,8 @@ export const cjt188Parser: ProtocolParser = {
     if (!CONTROL_NAMES[control]) throw new Error(`控制码错误：Joymeter 小口径协议未定义 ${hexByte(control ?? 0)}H。`);
     const declaredLength = bytes[start + 10];
     const actualLength = bytes.length - start - 13;
-    if (declaredLength !== actualLength) throw new Error(`长度字段错误：小口径帧声明 DATA 为 ${declaredLength} Bytes，实际为 ${actualLength} Bytes。`);
-    if (declaredLength < 2) throw new Error("数据区错误：DATA 至少应包含 2 字节数据标识 DI。");
+    if (declaredLength !== actualLength) throw new Error(`长度字段错误：小口径帧声明 DI 至 CS 前为 ${declaredLength} Bytes，实际为 ${actualLength} Bytes。`);
+    if (declaredLength < 2) throw new Error("数据区错误：从 DI 至 CS 前至少应包含 2 字节数据标识。");
     const di = hex(safeSlice(bytes, start + 11, 2)).replaceAll(" ", "");
     if (di === "9020" && declaredLength < 38) throw new Error(`数据区不完整：9020 主动上报应至少为 38 Bytes，当前只有 ${declaredLength} Bytes。`);
   },
@@ -243,7 +243,7 @@ export const cjt188Parser: ProtocolParser = {
       field(bytes, start + 1, 1, "仪表类型", type.label, { note: type.codeLabel, tone: "meta" }),
       field(bytes, start + 2, 7, "表地址", meterAddress(bytes, start), { note: "7 字节 BCD，低位在前", tone: "meta" }),
       field(bytes, controlOffset, 1, "控制码", CONTROL_NAMES[bytes[controlOffset]], { note: `${hexByte(bytes[controlOffset])}H`, tone: "header" }),
-      field(bytes, lengthOffset, 1, "数据长度 L", `${dataLength} Bytes`, { note: "仅表示 DATA 长度", tone: "meta" }),
+      field(bytes, lengthOffset, 1, "数据长度 L", `${dataLength} Bytes`, { note: "从数据标识 DI 至 CS 前一字节", tone: "meta" }),
       field(bytes, dataOffset, 2, "数据标识 DI", di, { note: DI_NAMES[di] ?? "协议扩展/暂未命名", tone: "meta" }),
     );
 

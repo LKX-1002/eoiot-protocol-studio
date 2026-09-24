@@ -5,11 +5,15 @@ import { hex, parseHex } from "@/lib/protocols/bytes";
 import { buildAnalysisSummary } from "@/lib/protocols/analysis";
 import { parseWithRegistry, parsers, validateWithRegistry } from "@/lib/protocols/registry";
 import { sampleList, samples } from "@/lib/protocols/samples";
+import { buildWotmanIpCommand } from "@/lib/protocols/wotman-command";
+import { buildWotmanSyncCommand } from "@/lib/protocols/wotman-sync-command";
 import type { ParseResult, ParsedField } from "@/lib/protocols/types";
 
 type TabId = "overview" | "fields" | "bytes" | "history" | "diagnostics" | "json";
-type AppView = "studio" | "library" | "samples" | "records";
-type ActionFeedback = "paste" | "format" | "clear" | "copy-json" | "export-json" | null;
+type AppView = "studio" | "commands" | "library" | "samples" | "records";
+type ActionFeedback = "paste" | "format" | "clear" | "copy-json" | "export-json" | "copy-command" | null;
+
+const defaultCommandInput = { meterAddress: "00430500003821", primaryIp: "60.205.218.69", primaryPort: "6118", apn: "CMNET" };
 
 /** 工具栏使用统一的线性图标，避免不同平台的 Emoji 造成视觉尺寸不一致。 */
 function ToolIcon({ name }: { name: "paste" | "format" | "clear" | "copy" | "download" | "check" | "code" }) {
@@ -38,9 +42,10 @@ function BrandMark() {
 }
 
 /** 侧栏导航统一使用 18px 线性 SVG，保证图标线宽、基线和文字间距一致。 */
-function NavIcon({ name }: { name: "parser" | "library" | "sample" | "history" | "device" | "team" }) {
+function NavIcon({ name }: { name: "parser" | "command" | "library" | "sample" | "history" | "device" | "team" }) {
   const paths = {
     parser: <><path d="M5 3h10l4 4v14H5z"/><path d="M15 3v5h5M8 12h8M8 16h5"/></>,
+    command: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></>,
     library: <><path d="M5 4h12a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z"/><path d="M8 4v16M11 8h5M11 12h5"/></>,
     sample: <><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h3v3H8zM13 8h3v3h-3zM8 13h3v3H8zM13 13h3v3h-3z"/></>,
     history: <><path d="M4 12a8 8 0 1 0 2.34-5.66L4 8.68"/><path d="M4 4v4.68h4.68M12 8v5l3 2"/></>,
@@ -70,6 +75,7 @@ const tabs: Array<{ id: TabId; label: string }> = [
 ];
 
 const parserCapabilities: Record<string, string[]> = {
+  "wotman-command": ["8110 写通信参数", "A016 写机电同步", "长度与 CS 校验", "字段反向解析"],
   "cjt188-small": ["10H 冷水", "11H 生活热水", "12H 直饮水", "13H 中水", "14H–19H 保留", "CS 校验"],
   "wotman-big": ["9021 / 9023 / 9025", "历史数据", "压力温度", "设备身份", "业务告警"],
 };
@@ -190,6 +196,9 @@ export function ProtocolStudio() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [view, setView] = useState<AppView>("studio");
   const [rawInput, setRawInput] = useState(samples.cjt188.value);
+  const [commandInput, setCommandInput] = useState({ ...defaultCommandInput });
+  const [commandType, setCommandType] = useState<"network" | "sync">("network");
+  const [syncCommandInput, setSyncCommandInput] = useState({ meterAddress: "00430500003931", cumulativeFlow: "10" });
   const [result, setResult] = useState<ParseResult | null>(initialResult);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [selectedField, setSelectedField] = useState<ParsedField | null>(null);
@@ -260,6 +269,17 @@ export function ProtocolStudio() {
 
   /** 解析结果变化时同步生成本地规则结论，不上传设备报文。 */
   const analysis = useMemo(() => result ? buildAnalysisSummary(result) : null, [result]);
+
+  /** 写参数指令随输入实时生成；错误只显示在组帧页，不影响协议解析工作台。 */
+  const commandPreview = useMemo(() => {
+    try { return { result: buildWotmanIpCommand(commandInput), error: "" }; }
+    catch (caught) { return { result: null, error: caught instanceof Error ? caught.message : "指令参数不正确。" }; }
+  }, [commandInput]);
+
+  const syncCommandPreview = useMemo(() => {
+    try { return { result: buildWotmanSyncCommand(syncCommandInput), error: "" }; }
+    catch (caught) { return { result: null, error: caught instanceof Error ? caught.message : "机电同步参数不正确。" }; }
+  }, [syncCommandInput]);
 
   const toggleTheme = () => {
     const next = theme === "light" ? "dark" : "light";
@@ -374,6 +394,7 @@ export function ProtocolStudio() {
       <aside className="sidebar"><nav aria-label="主导航">
         <p className="nav-title">工作台</p>
         <button className={`nav-item${view === "studio" ? " active" : ""}`} type="button" onClick={() => setView("studio")}><NavIcon name="parser"/><b>协议解析</b></button>
+        <button className={`nav-item${view === "commands" ? " active" : ""}`} type="button" onClick={() => setView("commands")}><NavIcon name="command"/><b>指令生成</b></button>
         <button className={`nav-item${view === "library" ? " active" : ""}`} type="button" onClick={() => setView("library")}><NavIcon name="library"/><b>协议库</b></button>
         <button className={`nav-item${view === "samples" ? " active" : ""}`} type="button" onClick={() => setView("samples")}><NavIcon name="sample"/><b>样例帧</b></button>
         <button className={`nav-item${view === "records" ? " active" : ""}`} type="button" onClick={() => setView("records")}><NavIcon name="history"/><b>解析记录</b></button>
@@ -386,7 +407,7 @@ export function ProtocolStudio() {
         <div className="page-heading"><div><h1>协议解析工作台</h1><span>粘贴设备报文，快速查看字段、字节与诊断结果。</span></div><div className="heading-actions"><button type="button" onClick={() => fileInputRef.current?.click()}>导入文本</button><button type="button" onClick={() => setView("samples")}>打开样例库</button></div></div>
         <input ref={fileInputRef} className="visually-hidden" type="file" accept=".txt,.log,.hex,text/plain" onChange={importText}/>
 
-        <div className="workbench">
+        <div className={`workbench${!result ? " is-empty" : ""}`}>
           <section className="panel input-panel">
             <div className="panel-title"><div><span className="step">01</span><strong>输入原始帧</strong></div><span className="byte-count">{inputState.count} Bytes</span></div>
             <div className="input-body">
@@ -415,7 +436,7 @@ export function ProtocolStudio() {
               }}>{tab.label}{tab.id === "history" && result.history.length > 0 && <em>{result.history.length}</em>}{tab.id === "diagnostics" && <em>{result.diagnostics.length}</em>}</button>)}</div>
               <div className="tab-content">
                 {activeTab === "overview" && <>
-                  {analysis && <section className={`analysis-card analysis-${analysis.level}`} aria-label="分析结论">
+                  {analysis && result.protocolId !== "wotman-command" && <section className={`analysis-card analysis-${analysis.level}`} aria-label="分析结论">
                     <header><div><span className="analysis-icon">{analysis.level === "normal" ? "✓" : analysis.level === "abnormal" ? "×" : "!"}</span><strong>上报分析</strong></div><span className="analysis-status">{analysis.statusLabel}</span></header>
                     <div className="analysis-body">
                       <div className="analysis-summary-grid">{analysis.items.map((item) => <article className={`analysis-item analysis-item-${item.key}`} key={item.key}><span>{item.label}</span><strong>{item.value}</strong>{item.note && <small>{item.note}</small>}</article>)}</div>
@@ -439,6 +460,52 @@ export function ProtocolStudio() {
         </div>
       </section>}
 
+      {view === "commands" && <section className="page command-page">
+        <div className="page-heading"><div><p className="eyebrow">WOTMAN DOWNLINK COMMAND</p><h1>沃特曼写入指令</h1><span>生成写通信参数或写机电同步指令；反向解析统一在协议解析工作台完成。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回解析工作台</button></div>
+        <div className="command-mode-tabs" role="tablist" aria-label="写入指令类型">
+          <button className={commandType === "network" ? "active" : ""} type="button" role="tab" aria-selected={commandType === "network"} onClick={() => { setCommandType("network"); setSelectedField(null); }}>写 IP / 端口 · 8110H</button>
+          <button className={commandType === "sync" ? "active" : ""} type="button" role="tab" aria-selected={commandType === "sync"} onClick={() => { setCommandType("sync"); setSelectedField(null); }}>写机电同步 · A016H</button>
+        </div>
+        <div className="command-workbench">
+          <section className="panel command-form-panel">
+            <div className="panel-title"><div><span className="step">01</span><strong>{commandType === "network" ? "填写通信参数" : "填写同步参数"}</strong></div><span className="byte-count">实时组帧</span></div>
+            {commandType === "network" ? <div className="command-form">
+              <label><span>仪表地址</span><input value={commandInput.meterAddress} inputMode="numeric" maxLength={14} onChange={(event) => setCommandInput((current) => ({ ...current, meterAddress: event.target.value }))}/><small>输入展示顺序的表号，最多 14 位；发送时自动按低字节在前编码。</small></label>
+              <div className="command-form-row">
+                <label><span>主用 IP 地址</span><input value={commandInput.primaryIp} inputMode="decimal" onChange={(event) => setCommandInput((current) => ({ ...current, primaryIp: event.target.value }))}/><small>默认：60.205.218.69</small></label>
+                <label><span>主用端口</span><input value={commandInput.primaryPort} inputMode="numeric" onChange={(event) => setCommandInput((current) => ({ ...current, primaryPort: event.target.value }))}/><small>范围 1–65535，自动转为 2 字节小端。</small></label>
+              </div>
+              <label><span>APN</span><input value={commandInput.apn} maxLength={16} onChange={(event) => setCommandInput((current) => ({ ...current, apn: event.target.value }))}/><small>最多 16 个 ASCII 字符，不足部分自动补 00H。</small></label>
+              <div className="command-fixed-fields"><span>固定协议参数</span><strong>控制码 04H</strong><strong>数据标识 8110H</strong><strong>长度 3BH</strong></div>
+              {commandPreview.error && <p className="command-error" role="alert">{commandPreview.error}</p>}
+              <button className="sample-button command-reset" type="button" onClick={() => setCommandInput({ ...defaultCommandInput })}>恢复示例参数</button>
+            </div> : <div className="command-form">
+              <label><span>设备编号</span><input value={syncCommandInput.meterAddress} inputMode="numeric" maxLength={14} onChange={(event) => setSyncCommandInput((current) => ({ ...current, meterAddress: event.target.value }))}/><small>输入展示顺序的设备编号；发送时自动按 7 字节 BCD、低字节在前编码。</small></label>
+              <label><span>当前累计流量（m³）</span><input value={syncCommandInput.cumulativeFlow} inputMode="decimal" onChange={(event) => setSyncCommandInput((current) => ({ ...current, cumulativeFlow: event.target.value }))}/><small>最多 2 位小数；按 4 字节 BCD、小端编码，单位固定为 2CH。</small></label>
+              <div className="command-fixed-fields"><span>固定协议参数</span><strong>控制码 04H</strong><strong>数据标识 A016H</strong><strong>长度 0008H</strong><strong>单位 2CH</strong></div>
+              {syncCommandPreview.error && <p className="command-error" role="alert">{syncCommandPreview.error}</p>}
+              <button className="sample-button command-reset" type="button" onClick={() => setSyncCommandInput({ meterAddress: "00430500003931", cumulativeFlow: "10" })}>恢复示例参数</button>
+            </div>}
+          </section>
+
+          <section className="panel command-result-panel">
+            <div className="panel-title"><div><span className="step">02</span><strong>生成指令</strong></div><span className={`command-state${(commandType === "network" ? commandPreview.result : syncCommandPreview.result) ? " valid" : " invalid"}`}>{(commandType === "network" ? commandPreview.result : syncCommandPreview.result) ? "● 长度与校验通过" : "● 等待有效参数"}</span></div>
+            {commandType === "network" && commandPreview.result ? <>
+              <div className="command-summary"><div><span>主用服务器</span><strong>{commandInput.primaryIp}:{commandInput.primaryPort}</strong></div><div><span>数据区 / 整帧</span><strong>59 / {commandPreview.result.bytes.length} Bytes</strong></div><div><span>校验码 CS</span><strong>{commandPreview.result.checksum}</strong></div></div>
+              <div className="command-output">
+                <div className="command-output-head"><div><strong>完整 HEX 指令</strong><span>DI 至 MAC 末字节共 59 Bytes，可直接复制下发</span></div><button className={actionFeedback === "copy-command" ? "is-success" : ""} type="button" onClick={() => copyText(commandPreview.result!.compactHex, "沃特曼写参数指令", "copy-command")}><ToolIcon name={actionFeedback === "copy-command" ? "check" : "copy"}/>{actionFeedback === "copy-command" ? "已复制" : "复制指令"}</button></div>
+                <textarea readOnly value={commandPreview.result.compactHex} aria-label="生成的沃特曼写 IP 端口指令"/>
+              </div>
+              <div className="command-explanation"><header><strong>字段组成</strong><span>IP 按网络顺序，端口按小端顺序</span></header><FieldTable fields={commandPreview.result.fields} selectedField={selectedField} onSelect={setSelectedField}/></div>
+            </> : commandType === "sync" && syncCommandPreview.result ? <>
+              <div className="command-summary"><div><span>同步目标</span><strong>{syncCommandPreview.result.meterAddress}</strong></div><div><span>累计流量</span><strong>{syncCommandPreview.result.cumulativeFlow} m³</strong></div><div><span>校验码 CS</span><strong>{syncCommandPreview.result.checksum}</strong></div></div>
+              <div className="command-output"><div className="command-output-head"><div><strong>完整 HEX 指令</strong><span>DI 至单位字节共 8 Bytes，可直接复制下发</span></div><button className={actionFeedback === "copy-command" ? "is-success" : ""} type="button" onClick={() => copyText(syncCommandPreview.result!.compactHex, "沃特曼写机电同步指令", "copy-command")}><ToolIcon name={actionFeedback === "copy-command" ? "check" : "copy"}/>{actionFeedback === "copy-command" ? "已复制" : "复制指令"}</button></div><textarea readOnly value={syncCommandPreview.result.compactHex} aria-label="生成的沃特曼写机电同步指令"/></div>
+              <div className="command-explanation"><header><strong>字段组成</strong><span>累计量为 4 字节 BCD、小端，2CH 表示 0.01 m³/计数</span></header><FieldTable fields={syncCommandPreview.result.fields} selectedField={selectedField} onSelect={setSelectedField}/></div>
+            </> : <div className="command-empty"><strong>参数尚未完成</strong><p>修正左侧提示后会自动生成完整指令。</p></div>}
+          </section>
+        </div>
+      </section>}
+
       {view === "library" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">PROTOCOL REGISTRY</p><h1>协议能力库</h1><span>查看当前已经接入并可由后台解析内核自动识别的协议。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div><div className="collection-grid">{parsers.map((parser, index) => <article className="collection-card" key={parser.id}><div className="card-top"><span className="protocol-icon">{String(index + 1).padStart(2, "0")}</span><span className="ready-badge">● 可用</span></div><p>{parser.category === "water" ? "水务计量" : parser.category}</p><h2>{parser.name}</h2><code>{parser.id}</code><div className="capability-list">{parserCapabilities[parser.id]?.map((item) => <span key={item}>{item}</span>)}</div><button type="button" onClick={() => setView("studio")}>进入自动解析</button></article>)}</div></section>}
 
       {view === "samples" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">FRAME PLAYGROUND</p><h1>样例帧</h1><span>无需准备设备数据，选择样例即可验证完整解析链路。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div><div className="sample-grid">{sampleList.map((sample) => <article className="sample-card" key={sample.id}><div><span className="sample-type">{sample.protocolId === "wotman-big" ? "WOTMAN" : "CJ/T 188"}</span><strong>{parseHex(sample.value).length} Bytes</strong></div><h2>{sample.name}</h2><p>{sample.description}</p><code>{sample.value}</code><footer><button type="button" onClick={() => copyText(sample.value, "样例报文")}>复制 HEX</button><button className="primary-link" type="button" onClick={() => useSample(sample)}>载入并解析</button></footer></article>)}</div></section>}
@@ -449,6 +516,7 @@ export function ProtocolStudio() {
     {/* 手机端使用固定底部导航，避免侧栏隐藏后协议库、样例和记录失去入口。 */}
     <nav className="mobile-navigation" aria-label="手机端主导航">
       <button className={view === "studio" ? "active" : ""} type="button" aria-current={view === "studio" ? "page" : undefined} onClick={() => setView("studio")}><NavIcon name="parser"/><span>协议解析</span></button>
+      <button className={view === "commands" ? "active" : ""} type="button" aria-current={view === "commands" ? "page" : undefined} onClick={() => setView("commands")}><NavIcon name="command"/><span>指令生成</span></button>
       <button className={view === "library" ? "active" : ""} type="button" aria-current={view === "library" ? "page" : undefined} onClick={() => setView("library")}><NavIcon name="library"/><span>协议库</span></button>
       <button className={view === "samples" ? "active" : ""} type="button" aria-current={view === "samples" ? "page" : undefined} onClick={() => setView("samples")}><NavIcon name="sample"/><span>样例帧</span></button>
       <button className={view === "records" ? "active" : ""} type="button" aria-current={view === "records" ? "page" : undefined} onClick={() => setView("records")}><NavIcon name="history"/><span>解析记录</span></button>

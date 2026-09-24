@@ -1,9 +1,10 @@
 import { cjt188Parser } from "./cjt188";
 import type { ParseOptions, ProtocolParser } from "./types";
 import { wotmanParser } from "./wotman";
+import { wotmanCommandParser } from "./wotman-command-parser";
 
 /** 所有可用协议解析器的唯一注册入口。 */
-export const parsers: ProtocolParser[] = [cjt188Parser, wotmanParser];
+export const parsers: ProtocolParser[] = [wotmanCommandParser, cjt188Parser, wotmanParser];
 
 /**
  * 选择解析器并执行协议级硬校验。

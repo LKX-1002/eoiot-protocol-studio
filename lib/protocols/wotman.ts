@@ -450,7 +450,7 @@ export const wotmanParser: ProtocolParser = {
     const declaredDataLength = uint(safeSlice(bytes, controlOffset + 1, 2), "le");
     const actualDataLength = bytes.length - start - 14;
     if (declaredDataLength !== actualDataLength) {
-      throw new Error(`长度字段错误：大口径帧声明 DATA 为 ${declaredDataLength} Bytes，实际为 ${actualDataLength} Bytes。`);
+      throw new Error(`长度字段错误：大口径帧声明 DI 至 CS 前为 ${declaredDataLength} Bytes，实际为 ${actualDataLength} Bytes。`);
     }
     if (declaredDataLength < 8) throw new Error("数据区错误：沃特曼 DATA 缺少分帧头或历史条数。");
     const dataOffset = start + 12;
@@ -493,7 +493,7 @@ export const wotmanParser: ProtocolParser = {
       field(bytes, start + 1, 1, "仪表类型", meterType?.label ?? "大口径水表", { note: meterType?.codeLabel, tone: "meta" }),
       field(bytes, start + 2, 7, "表地址", meterAddress(bytes, start), { note: "低字节在前", tone: "meta" }),
       field(bytes, controlOffset, 1, "控制码", hexByte(bytes[controlOffset] ?? 0), { tone: "header" }),
-      field(bytes, controlOffset + 1, 2, "数据长度 L", `${dataLength} Bytes`, { note: "2 字节无符号整数，小端；仅表示 DATA 长度", tone: "meta" }),
+      field(bytes, controlOffset + 1, 2, "数据长度 L", `${dataLength} Bytes`, { note: "2 字节无符号整数，小端；从 DI 至 CS 前一字节", tone: "meta" }),
       field(bytes, diOffset, 2, "数据标识 DI", dataIdentifier, { tone: "meta" }),
     ];
     // 合并通用帧检查、具体 DI 检查以及业务告警。
