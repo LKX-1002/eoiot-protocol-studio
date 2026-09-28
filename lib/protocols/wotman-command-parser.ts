@@ -1,11 +1,17 @@
-import { checksumDiagnostics, findFrameStart, hex, safeSlice, uint } from "./bytes";
+import { checksumDiagnostics, findFrameStart, hex, hexByte, safeSlice, uint } from "./bytes";
 import { parseWotmanIpCommand } from "./wotman-command";
 import { parseWotmanSyncCommand } from "./wotman-sync-command";
+import { parseCollectionIntervalCommand, parseUploadScheduleCommand, parseValveCommand } from "./wotman-control-command";
 import type { ParseResult, ProtocolParser } from "./types";
 
 function commandKind(bytes: number[], start: number) {
   const di = hex(safeSlice(bytes, start + 12, 2)).replaceAll(" ", "");
-  return di === "8110" ? "network" : di === "A016" ? "sync" : null;
+  return di === "8110" ? "network"
+    : di === "A016" ? "sync"
+      : di === "A017" ? "valve"
+        : di === "8104" ? "schedule"
+          : di === "8105" ? "interval"
+            : null;
 }
 
 /** 沃特曼平台下发帧：04H 控制码、2 字节小端长度、DI 位于偏移 12。 */
@@ -30,7 +36,10 @@ export const wotmanCommandParser: ProtocolParser = {
     const kind = commandKind(bytes, start);
     if (kind === "network") parseWotmanIpCommand(hex(bytes));
     else if (kind === "sync") parseWotmanSyncCommand(bytes);
-    else throw new Error("数据标识错误：当前写入解析支持 8110H 通信参数与 A016H 机电同步。");
+    else if (kind === "valve") parseValveCommand(bytes);
+    else if (kind === "schedule") parseUploadScheduleCommand(bytes);
+    else if (kind === "interval") parseCollectionIntervalCommand(bytes);
+    else throw new Error("数据标识错误：当前支持 8110H、A016H、A017H、8104H 与 8105H 写入指令。");
   },
 
   parse(bytes): ParseResult {
@@ -77,6 +86,52 @@ export const wotmanCommandParser: ProtocolParser = {
         diagnostics,
         history: [],
         rawBytes: bytes,
+      };
+    }
+
+    if (kind === "valve") {
+      const parsed = parseValveCommand(bytes);
+      diagnostics.push({ level: "ok", text: `阀门控制字有效，本次操作为${parsed.actionLabel}。` });
+      return {
+        protocol: "沃特曼下行指令 · 采集器阀门控制", protocolId: this.id, category: "water", categoryLabel: "沃特曼写入指令", manufacturer: "武汉沃特曼", confidence: this.detect(bytes),
+        meterNo: parsed.meterAddress, controlCode: "04H", dataIdentifier: "A017", dataLength: 4, coreValue: parsed.actionLabel,
+        metrics: { valveAction: parsed.actionLabel },
+        overviewSections: [{ id: "command", title: "阀门控制", items: [
+          { key: "meterNo", label: "设备编号", value: parsed.meterAddress },
+          { key: "action", label: "执行操作", value: parsed.actionLabel },
+          { key: "control", label: "控制字", value: parsed.action === "open" ? "55H" : "99H" },
+        ] }], fields: parsed.fields, diagnostics, history: [], rawBytes: bytes,
+      };
+    }
+
+    if (kind === "schedule") {
+      const parsed = parseUploadScheduleCommand(bytes);
+      const scheduleText = parsed.schedule.flatMap((pair, hour) => pair.flatMap((minute) => minute === null ? [] : [`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`])).join("、");
+      diagnostics.push({ level: "ok", text: `24 小时上传参数已解析，共启用 ${parsed.enabledCount} 个上传时刻。` });
+      return {
+        protocol: "沃特曼下行指令 · 自动上传时间", protocolId: this.id, category: "water", categoryLabel: "沃特曼写入指令", manufacturer: "武汉沃特曼", confidence: this.detect(bytes),
+        meterNo: parsed.meterAddress, controlCode: "04H", dataIdentifier: "8104", dataLength: 51, coreValue: `${parsed.enabledCount} 个上传时刻`,
+        metrics: { uploadTimeCount: parsed.enabledCount, uploadTimes: scheduleText || "全部停用" },
+        overviewSections: [{ id: "command", title: "自动上传时间", items: [
+          { key: "meterNo", label: "设备编号", value: parsed.meterAddress },
+          { key: "count", label: "启用时刻", value: parsed.enabledCount, unit: "个" },
+          { key: "times", label: "上传时间", value: scheduleText || "全部停用" },
+        ] }], fields: parsed.fields, diagnostics, history: [], rawBytes: bytes,
+      };
+    }
+
+    if (kind === "interval") {
+      const parsed = parseCollectionIntervalCommand(bytes);
+      diagnostics.push({ level: "ok", text: `数据采集间隔已解析为 ${parsed.intervalMinutes} 分钟。` });
+      return {
+        protocol: "沃特曼下行指令 · 数据采集间隔", protocolId: this.id, category: "water", categoryLabel: "沃特曼写入指令", manufacturer: "武汉沃特曼", confidence: this.detect(bytes),
+        meterNo: parsed.meterAddress, controlCode: "04H", dataIdentifier: "8105", dataLength: 4, coreValue: `${parsed.intervalMinutes} 分钟`,
+        metrics: { collectionInterval: parsed.intervalMinutes },
+        overviewSections: [{ id: "command", title: "采集间隔", items: [
+          { key: "meterNo", label: "设备编号", value: parsed.meterAddress },
+          { key: "interval", label: "采集间隔", value: parsed.intervalMinutes, unit: "分钟" },
+          { key: "raw", label: "原始值", value: `${hexByte(parsed.intervalMinutes)}H` },
+        ] }], fields: parsed.fields, diagnostics, history: [], rawBytes: bytes,
       };
     }
 

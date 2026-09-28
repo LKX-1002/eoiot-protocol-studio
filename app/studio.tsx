@@ -7,11 +7,15 @@ import { parseWithRegistry, parsers, validateWithRegistry } from "@/lib/protocol
 import { sampleList, samples } from "@/lib/protocols/samples";
 import { buildWotmanIpCommand } from "@/lib/protocols/wotman-command";
 import { buildWotmanSyncCommand } from "@/lib/protocols/wotman-sync-command";
+import { buildCollectionIntervalCommand, buildUploadScheduleCommand, buildValveCommand, type ValveAction } from "@/lib/protocols/wotman-control-command";
+import { downloadXlsx } from "@/lib/export-xlsx";
 import type { ParseResult, ParsedField } from "@/lib/protocols/types";
 
 type TabId = "overview" | "fields" | "bytes" | "history" | "diagnostics" | "json";
 type AppView = "studio" | "commands" | "library" | "samples" | "records";
-type ActionFeedback = "paste" | "format" | "clear" | "copy-json" | "export-json" | "copy-command" | null;
+type CommandType = "network" | "sync" | "valve" | "schedule" | "interval";
+type ActionFeedback = "paste" | "format" | "clear" | "copy-json" | "export-json" | "copy-command" | "export-command" | null;
+type CommandGenerationMode = "single" | "batch";
 
 const defaultCommandInput = { meterAddress: "00430500003821", primaryIp: "60.205.218.69", primaryPort: "6118", apn: "CMNET" };
 
@@ -75,7 +79,7 @@ const tabs: Array<{ id: TabId; label: string }> = [
 ];
 
 const parserCapabilities: Record<string, string[]> = {
-  "wotman-command": ["8110 写通信参数", "A016 写机电同步", "长度与 CS 校验", "字段反向解析"],
+  "wotman-command": ["8110 写通信参数", "A016 写机电同步", "A017 阀门控制", "8104 上传时间", "8105 采集间隔", "字段反向解析"],
   "cjt188-small": ["10H 冷水", "11H 生活热水", "12H 直饮水", "13H 中水", "14H–19H 保留", "CS 校验"],
   "wotman-big": ["9021 / 9023 / 9025", "历史数据", "压力温度", "设备身份", "业务告警"],
 };
@@ -197,8 +201,14 @@ export function ProtocolStudio() {
   const [view, setView] = useState<AppView>("studio");
   const [rawInput, setRawInput] = useState(samples.cjt188.value);
   const [commandInput, setCommandInput] = useState({ ...defaultCommandInput });
-  const [commandType, setCommandType] = useState<"network" | "sync">("network");
+  const [commandType, setCommandType] = useState<CommandType>("network");
+  const [commandGenerationMode, setCommandGenerationMode] = useState<CommandGenerationMode>("single");
+  const [batchMeterInput, setBatchMeterInput] = useState("");
   const [syncCommandInput, setSyncCommandInput] = useState({ meterAddress: "00430500003931", cumulativeFlow: "10" });
+  const [valveCommandInput, setValveCommandInput] = useState<{ meterAddress: string; action: ValveAction }>({ meterAddress: "00430500003931", action: "open" });
+  const [scheduleMeterAddress, setScheduleMeterAddress] = useState("00430500003931");
+  const [uploadSchedule, setUploadSchedule] = useState<Array<[string, string]>>(() => Array.from({ length: 24 }, () => ["0", "30"]));
+  const [intervalCommandInput, setIntervalCommandInput] = useState({ meterAddress: "00430500003931", intervalMinutes: "60" });
   const [result, setResult] = useState<ParseResult | null>(initialResult);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [selectedField, setSelectedField] = useState<ParsedField | null>(null);
@@ -280,6 +290,104 @@ export function ProtocolStudio() {
     try { return { result: buildWotmanSyncCommand(syncCommandInput), error: "" }; }
     catch (caught) { return { result: null, error: caught instanceof Error ? caught.message : "机电同步参数不正确。" }; }
   }, [syncCommandInput]);
+
+  const valveCommandPreview = useMemo(() => {
+    try { return { result: buildValveCommand(valveCommandInput), error: "" }; }
+    catch (caught) { return { result: null, error: caught instanceof Error ? caught.message : "阀门控制参数不正确。" }; }
+  }, [valveCommandInput]);
+
+  const scheduleCommandPreview = useMemo(() => {
+    try {
+      const schedule = uploadSchedule.map(([first, second]) => [first.trim() === "" ? null : Number(first), second.trim() === "" ? null : Number(second)] as [number | null, number | null]);
+      return { result: buildUploadScheduleCommand({ meterAddress: scheduleMeterAddress, schedule }), error: "" };
+    } catch (caught) { return { result: null, error: caught instanceof Error ? caught.message : "自动上传时间参数不正确。" }; }
+  }, [scheduleMeterAddress, uploadSchedule]);
+
+  const intervalCommandPreview = useMemo(() => {
+    try { return { result: buildCollectionIntervalCommand(intervalCommandInput), error: "" }; }
+    catch (caught) { return { result: null, error: caught instanceof Error ? caught.message : "采集间隔参数不正确。" }; }
+  }, [intervalCommandInput]);
+
+  const activeCommandPreview = commandType === "network" ? commandPreview
+    : commandType === "sync" ? syncCommandPreview
+      : commandType === "valve" ? valveCommandPreview
+        : commandType === "schedule" ? scheduleCommandPreview
+          : intervalCommandPreview;
+  const activeCommandPresentation = commandType === "network"
+    ? { formTitle: "填写通信参数", primaryLabel: "主用服务器", primaryValue: `${commandInput.primaryIp}:${commandInput.primaryPort}`, secondaryLabel: "数据区 / 整帧", secondaryValue: `59 / ${activeCommandPreview.result?.bytes.length ?? 0} Bytes`, outputHint: "DI 至 MAC 末字节共 59 Bytes，可直接复制下发", copyLabel: "沃特曼写参数指令", fieldHint: "IP 按网络顺序，端口按小端顺序" }
+    : commandType === "sync"
+      ? { formTitle: "填写同步参数", primaryLabel: "同步目标", primaryValue: syncCommandInput.meterAddress.padStart(14, "0"), secondaryLabel: "累计流量", secondaryValue: `${syncCommandInput.cumulativeFlow || "—"} m³`, outputHint: "DI 至单位字节共 8 Bytes，可直接复制下发", copyLabel: "沃特曼写机电同步指令", fieldHint: "累计量为 4 字节 BCD、小端，2CH 表示 0.01 m³/计数" }
+      : commandType === "valve"
+        ? { formTitle: "填写阀门参数", primaryLabel: "控制目标", primaryValue: valveCommandInput.meterAddress.padStart(14, "0"), secondaryLabel: "阀门操作", secondaryValue: valveCommandInput.action === "open" ? "开阀 · 55H" : "关阀 · 99H", outputHint: "A017H 数据区共 4 Bytes，可直接复制下发", copyLabel: "沃特曼阀门控制指令", fieldHint: "55H 表示开阀，99H 表示关阀" }
+        : commandType === "schedule"
+          ? { formTitle: "设置上传时间", primaryLabel: "设置目标", primaryValue: scheduleMeterAddress.padStart(14, "0"), secondaryLabel: "启用时刻", secondaryValue: `${scheduleCommandPreview.result?.enabledCount ?? 0} 个`, outputHint: "8104H 数据区共 51 Bytes，包含 24×2 个分钟值", copyLabel: "沃特曼自动上传时间指令", fieldHint: "每小时两个 1 字节分钟值，留空编码为 FFH" }
+          : { formTitle: "设置采集间隔", primaryLabel: "设置目标", primaryValue: intervalCommandInput.meterAddress.padStart(14, "0"), secondaryLabel: "采集间隔", secondaryValue: `${intervalCommandInput.intervalMinutes || "—"} 分钟`, outputHint: "8105H 数据区共 4 Bytes，可直接复制下发", copyLabel: "沃特曼采集间隔指令", fieldHint: "间隔时间使用 1 字节无符号整数" };
+
+  const activeMeterAddress = commandType === "network" ? commandInput.meterAddress
+    : commandType === "sync" ? syncCommandInput.meterAddress
+      : commandType === "valve" ? valveCommandInput.meterAddress
+        : commandType === "schedule" ? scheduleMeterAddress
+          : intervalCommandInput.meterAddress;
+
+  const batchMeterState = useMemo(() => {
+    const tokens = batchMeterInput.split(/[\s,，;；]+/).map((item) => item.trim()).filter(Boolean);
+    const seen = new Set<string>();
+    const unique: Array<{ value: string; valid: boolean }> = [];
+    let duplicateCount = 0;
+    for (const item of tokens) {
+      const valid = /^\d{1,14}$/.test(item);
+      const value = valid ? item.padStart(14, "0") : item;
+      const key = `${valid ? "valid" : "invalid"}:${value}`;
+      if (seen.has(key)) { duplicateCount += 1; continue; }
+      seen.add(key);
+      unique.push({ value, valid });
+    }
+    const limited = unique.slice(0, 500);
+    return {
+      valid: limited.filter((item) => item.valid).map((item) => item.value),
+      invalid: limited.filter((item) => !item.valid).map((item) => item.value),
+      duplicateCount,
+      overflowCount: Math.max(unique.length - limited.length, 0),
+    };
+  }, [batchMeterInput]);
+
+  const batchCommandRows = useMemo(() => batchMeterState.valid.map((meterAddress) => {
+    try {
+      const result = commandType === "network" ? buildWotmanIpCommand({ ...commandInput, meterAddress })
+        : commandType === "sync" ? buildWotmanSyncCommand({ ...syncCommandInput, meterAddress })
+          : commandType === "valve" ? buildValveCommand({ ...valveCommandInput, meterAddress })
+            : commandType === "schedule" ? buildUploadScheduleCommand({ meterAddress, schedule: uploadSchedule.map(([first, second]) => [first.trim() === "" ? null : Number(first), second.trim() === "" ? null : Number(second)] as [number | null, number | null]) })
+              : buildCollectionIntervalCommand({ ...intervalCommandInput, meterAddress });
+      return { meterAddress: meterAddress.padStart(14, "0"), result, error: "" };
+    } catch (caught) {
+      return { meterAddress: meterAddress.padStart(14, "0"), result: null, error: caught instanceof Error ? caught.message : "组帧失败" };
+    }
+  }), [batchMeterState.valid, commandInput, commandType, intervalCommandInput, syncCommandInput, uploadSchedule, valveCommandInput]);
+
+  const commandMetadata = commandType === "network" ? { label: "写 IP / 端口", di: "8110H", summary: `${commandInput.primaryIp}:${commandInput.primaryPort} · APN ${commandInput.apn}` }
+    : commandType === "sync" ? { label: "写机电同步", di: "A016H", summary: `累计流量 ${syncCommandInput.cumulativeFlow || "—"} m³` }
+      : commandType === "valve" ? { label: "阀门控制", di: "A017H", summary: valveCommandInput.action === "open" ? "开阀 · 55H" : "关阀 · 99H" }
+        : commandType === "schedule" ? { label: "上传时间", di: "8104H", summary: `${scheduleCommandPreview.result?.enabledCount ?? 0} 个上传时刻` }
+          : { label: "采集间隔", di: "8105H", summary: `${intervalCommandInput.intervalMinutes || "—"} 分钟` };
+  const batchBuildErrors = batchCommandRows.filter((row) => !row.result);
+  const batchReady = batchCommandRows.length > 0 && batchMeterState.invalid.length === 0 && batchMeterState.overflowCount === 0 && batchBuildErrors.length === 0;
+
+  const exportBatchCommands = () => {
+    if (!batchReady) return;
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+    downloadXlsx({
+      filename: `沃特曼批量指令_${commandMetadata.di.replace("H", "")}_${stamp}.xlsx`,
+      sheetName: "批量指令",
+      columns: [
+        { title: "序号", width: 8 }, { title: "表号", width: 20 }, { title: "指令类型", width: 18 }, { title: "数据标识 DI", width: 15 },
+        { title: "参数摘要", width: 34, wrap: true }, { title: "完整 HEX 指令", width: 95, wrap: true }, { title: "字节数", width: 12 }, { title: "校验码 CS", width: 14 },
+      ],
+      rows: batchCommandRows.map((row, index) => [String(index + 1), row.meterAddress, commandMetadata.label, commandMetadata.di, commandMetadata.summary, row.result!.compactHex, String(row.result!.bytes.length), row.result!.checksum]),
+    });
+    setActionFeedback("export-command");
+    setToast(`已导出 ${batchCommandRows.length} 条批量指令`);
+  };
 
   const toggleTheme = () => {
     const next = theme === "light" ? "dark" : "light";
@@ -382,6 +490,10 @@ export function ProtocolStudio() {
   const reuseRecord = (record: ParseRecord) => { setRawInput(record.raw); setView("studio"); setMessage("已恢复历史报文，按 Ctrl + Enter 重新解析"); };
   const clearRecords = () => { setRecords([]); window.localStorage.removeItem("eoiot-records"); setToast("本机记录已清空"); };
 
+  const renderMeterAddressField = (label: string, value: string, onChange: (value: string) => void, note: string) => commandGenerationMode === "batch"
+    ? <label className="batch-meter-field"><span>批量表号</span><textarea value={batchMeterInput} onChange={(event) => setBatchMeterInput(event.target.value)} placeholder={"每行一个表号，也支持空格、逗号分隔\n例如：\n00430500003931\n00430500003932"}/><small>最多 500 个，重复表号会自动去除；导出的 Excel 会把表号保存为文本。</small><div className="batch-meter-stats"><strong>{batchMeterState.valid.length} 个有效</strong>{batchMeterState.invalid.length > 0 && <span className="invalid">{batchMeterState.invalid.length} 个格式错误</span>}{batchMeterState.duplicateCount > 0 && <span>{batchMeterState.duplicateCount} 个重复已忽略</span>}{batchMeterState.overflowCount > 0 && <span className="invalid">超出上限 {batchMeterState.overflowCount} 个</span>}</div>{batchMeterState.invalid.length > 0 && <code className="batch-invalid-list">错误：{batchMeterState.invalid.slice(0, 5).join("、")}{batchMeterState.invalid.length > 5 ? "…" : ""}</code>}</label>
+    : <label><span>{label}</span><input value={value} inputMode="numeric" maxLength={14} onChange={(event) => onChange(event.target.value)}/><small>{note}</small></label>;
+
   return <main className="studio-app" data-theme={theme} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); parseFrame(); } }}>
     <header className="topbar">
       <button className="brand brand-button" type="button" onClick={() => setView("studio")} aria-label="返回协议解析工作台"><BrandMark/><span><strong>EOIOT</strong><small>Protocol Studio</small></span></button>
@@ -461,46 +573,67 @@ export function ProtocolStudio() {
       </section>}
 
       {view === "commands" && <section className="page command-page">
-        <div className="page-heading"><div><p className="eyebrow">WOTMAN DOWNLINK COMMAND</p><h1>沃特曼写入指令</h1><span>生成写通信参数或写机电同步指令；反向解析统一在协议解析工作台完成。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回解析工作台</button></div>
+        <div className="page-heading"><div><p className="eyebrow">WOTMAN DOWNLINK COMMAND</p><h1>沃特曼写入指令</h1><span>生成通信、同步、阀门、上传时间与采集间隔指令；反向解析统一在协议解析工作台完成。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回解析工作台</button></div>
         <div className="command-mode-tabs" role="tablist" aria-label="写入指令类型">
           <button className={commandType === "network" ? "active" : ""} type="button" role="tab" aria-selected={commandType === "network"} onClick={() => { setCommandType("network"); setSelectedField(null); }}>写 IP / 端口 · 8110H</button>
           <button className={commandType === "sync" ? "active" : ""} type="button" role="tab" aria-selected={commandType === "sync"} onClick={() => { setCommandType("sync"); setSelectedField(null); }}>写机电同步 · A016H</button>
+          <button className={commandType === "valve" ? "active" : ""} type="button" role="tab" aria-selected={commandType === "valve"} onClick={() => { setCommandType("valve"); setSelectedField(null); }}>阀门控制 · A017H</button>
+          <button className={commandType === "schedule" ? "active" : ""} type="button" role="tab" aria-selected={commandType === "schedule"} onClick={() => { setCommandType("schedule"); setSelectedField(null); }}>上传时间 · 8104H</button>
+          <button className={commandType === "interval" ? "active" : ""} type="button" role="tab" aria-selected={commandType === "interval"} onClick={() => { setCommandType("interval"); setSelectedField(null); }}>采集间隔 · 8105H</button>
         </div>
         <div className="command-workbench">
           <section className="panel command-form-panel">
-            <div className="panel-title"><div><span className="step">01</span><strong>{commandType === "network" ? "填写通信参数" : "填写同步参数"}</strong></div><span className="byte-count">实时组帧</span></div>
+            <div className="panel-title"><div><span className="step">01</span><strong>{activeCommandPresentation.formTitle}</strong></div><span className="byte-count">实时组帧</span></div>
+            <div className="command-generation-mode" role="group" aria-label="指令生成数量">
+              <button className={commandGenerationMode === "single" ? "active" : ""} type="button" onClick={() => setCommandGenerationMode("single")}><strong>单表生成</strong><span>查看完整字段</span></button>
+              <button className={commandGenerationMode === "batch" ? "active" : ""} type="button" onClick={() => { setCommandGenerationMode("batch"); if (!batchMeterInput.trim()) setBatchMeterInput(activeMeterAddress); }}><strong>批量表号</strong><span>生成后导出 Excel</span></button>
+            </div>
             {commandType === "network" ? <div className="command-form">
-              <label><span>仪表地址</span><input value={commandInput.meterAddress} inputMode="numeric" maxLength={14} onChange={(event) => setCommandInput((current) => ({ ...current, meterAddress: event.target.value }))}/><small>输入展示顺序的表号，最多 14 位；发送时自动按低字节在前编码。</small></label>
+              {renderMeterAddressField("仪表地址", commandInput.meterAddress, (meterAddress) => setCommandInput((current) => ({ ...current, meterAddress })), "输入展示顺序的表号，最多 14 位；发送时自动按低字节在前编码。")}
               <div className="command-form-row">
                 <label><span>主用 IP 地址</span><input value={commandInput.primaryIp} inputMode="decimal" onChange={(event) => setCommandInput((current) => ({ ...current, primaryIp: event.target.value }))}/><small>默认：60.205.218.69</small></label>
                 <label><span>主用端口</span><input value={commandInput.primaryPort} inputMode="numeric" onChange={(event) => setCommandInput((current) => ({ ...current, primaryPort: event.target.value }))}/><small>范围 1–65535，自动转为 2 字节小端。</small></label>
               </div>
               <label><span>APN</span><input value={commandInput.apn} maxLength={16} onChange={(event) => setCommandInput((current) => ({ ...current, apn: event.target.value }))}/><small>最多 16 个 ASCII 字符，不足部分自动补 00H。</small></label>
               <div className="command-fixed-fields"><span>固定协议参数</span><strong>控制码 04H</strong><strong>数据标识 8110H</strong><strong>长度 3BH</strong></div>
-              {commandPreview.error && <p className="command-error" role="alert">{commandPreview.error}</p>}
+              {commandGenerationMode === "single" && commandPreview.error && <p className="command-error" role="alert">{commandPreview.error}</p>}
               <button className="sample-button command-reset" type="button" onClick={() => setCommandInput({ ...defaultCommandInput })}>恢复示例参数</button>
-            </div> : <div className="command-form">
-              <label><span>设备编号</span><input value={syncCommandInput.meterAddress} inputMode="numeric" maxLength={14} onChange={(event) => setSyncCommandInput((current) => ({ ...current, meterAddress: event.target.value }))}/><small>输入展示顺序的设备编号；发送时自动按 7 字节 BCD、低字节在前编码。</small></label>
+            </div> : commandType === "sync" ? <div className="command-form">
+              {renderMeterAddressField("设备编号", syncCommandInput.meterAddress, (meterAddress) => setSyncCommandInput((current) => ({ ...current, meterAddress })), "输入展示顺序的设备编号；发送时自动按 7 字节 BCD、低字节在前编码。")}
               <label><span>当前累计流量（m³）</span><input value={syncCommandInput.cumulativeFlow} inputMode="decimal" onChange={(event) => setSyncCommandInput((current) => ({ ...current, cumulativeFlow: event.target.value }))}/><small>最多 2 位小数；按 4 字节 BCD、小端编码，单位固定为 2CH。</small></label>
               <div className="command-fixed-fields"><span>固定协议参数</span><strong>控制码 04H</strong><strong>数据标识 A016H</strong><strong>长度 0008H</strong><strong>单位 2CH</strong></div>
-              {syncCommandPreview.error && <p className="command-error" role="alert">{syncCommandPreview.error}</p>}
+              {commandGenerationMode === "single" && syncCommandPreview.error && <p className="command-error" role="alert">{syncCommandPreview.error}</p>}
               <button className="sample-button command-reset" type="button" onClick={() => setSyncCommandInput({ meterAddress: "00430500003931", cumulativeFlow: "10" })}>恢复示例参数</button>
+            </div> : commandType === "valve" ? <div className="command-form">
+              {renderMeterAddressField("设备编号", valveCommandInput.meterAddress, (meterAddress) => setValveCommandInput((current) => ({ ...current, meterAddress })), "7 字节 BCD 地址，发送时低字节在前。")}
+              <fieldset className="command-choice"><legend>阀门操作</legend><label className={valveCommandInput.action === "open" ? "active" : ""}><input type="radio" name="valve-action" checked={valveCommandInput.action === "open"} onChange={() => setValveCommandInput((current) => ({ ...current, action: "open" }))}/><span>开阀</span><small>控制字 55H</small></label><label className={valveCommandInput.action === "close" ? "active" : ""}><input type="radio" name="valve-action" checked={valveCommandInput.action === "close"} onChange={() => setValveCommandInput((current) => ({ ...current, action: "close" }))}/><span>关阀</span><small>控制字 99H</small></label></fieldset>
+              <div className="command-fixed-fields"><span>固定协议参数</span><strong>控制码 04H</strong><strong>数据标识 A017H</strong><strong>长度 0004H</strong></div>
+              {commandGenerationMode === "single" && valveCommandPreview.error && <p className="command-error" role="alert">{valveCommandPreview.error}</p>}
+            </div> : commandType === "schedule" ? <div className="command-form command-schedule-form">
+              {renderMeterAddressField("设备编号", scheduleMeterAddress, setScheduleMeterAddress, "每小时可设置两个上传分钟值；留空表示该时刻停用并编码为 FFH。")}
+              <div className="schedule-tools"><strong>24 小时上传分钟</strong><div><button type="button" onClick={() => setUploadSchedule(Array.from({ length: 24 }, () => ["0", "30"]))}>设为整点 / 半点</button><button type="button" onClick={() => setUploadSchedule(Array.from({ length: 24 }, () => ["", ""]))}>全部停用</button></div></div>
+              <div className="schedule-grid"><header><span>小时</span><span>分钟值 1</span><span>分钟值 2</span></header>{uploadSchedule.map(([first, second], hour) => <div className="schedule-row" key={hour}><strong>{hour.toString().padStart(2, "0")} 时</strong><input aria-label={`${hour} 点第一个上传分钟`} inputMode="numeric" placeholder="停用" value={first} onChange={(event) => setUploadSchedule((current) => current.map((pair, index) => index === hour ? [event.target.value, pair[1]] : pair))}/><input aria-label={`${hour} 点第二个上传分钟`} inputMode="numeric" placeholder="停用" value={second} onChange={(event) => setUploadSchedule((current) => current.map((pair, index) => index === hour ? [pair[0], event.target.value] : pair))}/></div>)}</div>
+              <div className="command-fixed-fields"><span>固定协议参数</span><strong>控制码 04H</strong><strong>数据标识 8104H</strong><strong>长度 0033H</strong></div>
+              {commandGenerationMode === "single" && scheduleCommandPreview.error && <p className="command-error" role="alert">{scheduleCommandPreview.error}</p>}
+            </div> : <div className="command-form">
+              {renderMeterAddressField("设备编号", intervalCommandInput.meterAddress, (meterAddress) => setIntervalCommandInput((current) => ({ ...current, meterAddress })), "7 字节 BCD 地址，发送时低字节在前。")}
+              <label><span>数据采集间隔（分钟）</span><input value={intervalCommandInput.intervalMinutes} inputMode="numeric" onChange={(event) => setIntervalCommandInput((current) => ({ ...current, intervalMinutes: event.target.value }))}/><small>范围 1–255，按 1 字节无符号整数写入。</small></label>
+              <div className="command-fixed-fields"><span>固定协议参数</span><strong>控制码 04H</strong><strong>数据标识 8105H</strong><strong>长度 0004H</strong></div>
+              {commandGenerationMode === "single" && intervalCommandPreview.error && <p className="command-error" role="alert">{intervalCommandPreview.error}</p>}
+              <button className="sample-button command-reset" type="button" onClick={() => setIntervalCommandInput({ meterAddress: "00430500003931", intervalMinutes: "60" })}>恢复示例参数</button>
             </div>}
           </section>
 
           <section className="panel command-result-panel">
-            <div className="panel-title"><div><span className="step">02</span><strong>生成指令</strong></div><span className={`command-state${(commandType === "network" ? commandPreview.result : syncCommandPreview.result) ? " valid" : " invalid"}`}>{(commandType === "network" ? commandPreview.result : syncCommandPreview.result) ? "● 长度与校验通过" : "● 等待有效参数"}</span></div>
-            {commandType === "network" && commandPreview.result ? <>
-              <div className="command-summary"><div><span>主用服务器</span><strong>{commandInput.primaryIp}:{commandInput.primaryPort}</strong></div><div><span>数据区 / 整帧</span><strong>59 / {commandPreview.result.bytes.length} Bytes</strong></div><div><span>校验码 CS</span><strong>{commandPreview.result.checksum}</strong></div></div>
-              <div className="command-output">
-                <div className="command-output-head"><div><strong>完整 HEX 指令</strong><span>DI 至 MAC 末字节共 59 Bytes，可直接复制下发</span></div><button className={actionFeedback === "copy-command" ? "is-success" : ""} type="button" onClick={() => copyText(commandPreview.result!.compactHex, "沃特曼写参数指令", "copy-command")}><ToolIcon name={actionFeedback === "copy-command" ? "check" : "copy"}/>{actionFeedback === "copy-command" ? "已复制" : "复制指令"}</button></div>
-                <textarea readOnly value={commandPreview.result.compactHex} aria-label="生成的沃特曼写 IP 端口指令"/>
-              </div>
-              <div className="command-explanation"><header><strong>字段组成</strong><span>IP 按网络顺序，端口按小端顺序</span></header><FieldTable fields={commandPreview.result.fields} selectedField={selectedField} onSelect={setSelectedField}/></div>
-            </> : commandType === "sync" && syncCommandPreview.result ? <>
-              <div className="command-summary"><div><span>同步目标</span><strong>{syncCommandPreview.result.meterAddress}</strong></div><div><span>累计流量</span><strong>{syncCommandPreview.result.cumulativeFlow} m³</strong></div><div><span>校验码 CS</span><strong>{syncCommandPreview.result.checksum}</strong></div></div>
-              <div className="command-output"><div className="command-output-head"><div><strong>完整 HEX 指令</strong><span>DI 至单位字节共 8 Bytes，可直接复制下发</span></div><button className={actionFeedback === "copy-command" ? "is-success" : ""} type="button" onClick={() => copyText(syncCommandPreview.result!.compactHex, "沃特曼写机电同步指令", "copy-command")}><ToolIcon name={actionFeedback === "copy-command" ? "check" : "copy"}/>{actionFeedback === "copy-command" ? "已复制" : "复制指令"}</button></div><textarea readOnly value={syncCommandPreview.result.compactHex} aria-label="生成的沃特曼写机电同步指令"/></div>
-              <div className="command-explanation"><header><strong>字段组成</strong><span>累计量为 4 字节 BCD、小端，2CH 表示 0.01 m³/计数</span></header><FieldTable fields={syncCommandPreview.result.fields} selectedField={selectedField} onSelect={setSelectedField}/></div>
+            <div className="panel-title"><div><span className="step">02</span><strong>{commandGenerationMode === "batch" ? "批量指令" : "生成指令"}</strong></div><span className={`command-state${commandGenerationMode === "batch" ? batchReady ? " valid" : " invalid" : activeCommandPreview.result ? " valid" : " invalid"}`}>{commandGenerationMode === "batch" ? batchReady ? `● ${batchCommandRows.length} 条可导出` : "● 请检查批量表号或参数" : activeCommandPreview.result ? "● 长度与校验通过" : "● 等待有效参数"}</span></div>
+            {commandGenerationMode === "batch" ? <div className="batch-command-result">
+              <div className="batch-command-summary"><article><span>指令类型</span><strong>{commandMetadata.label}</strong><small>{commandMetadata.di}</small></article><article><span>有效表号</span><strong>{batchMeterState.valid.length}</strong><small>最多 500 个</small></article><article><span>可导出</span><strong>{batchCommandRows.length - batchBuildErrors.length}</strong><small>{batchBuildErrors.length ? `${batchBuildErrors.length} 条组帧失败` : "全部校验通过"}</small></article><button className={actionFeedback === "export-command" ? "is-success" : ""} type="button" disabled={!batchReady} onClick={exportBatchCommands}><ToolIcon name={actionFeedback === "export-command" ? "check" : "download"}/><span>{actionFeedback === "export-command" ? "已导出 Excel" : "导出 Excel"}</span></button></div>
+              {batchCommandRows.length > 0 ? <div className="batch-command-table-wrap"><table className="batch-command-table"><thead><tr><th>序号</th><th>表号</th><th>状态</th><th>完整 HEX 指令</th></tr></thead><tbody>{batchCommandRows.slice(0, 50).map((row, index) => <tr key={row.meterAddress}><td>{index + 1}</td><td><code>{row.meterAddress}</code></td><td className={row.result ? "valid" : "invalid"}>{row.result ? "可导出" : row.error}</td><td><code>{row.result?.compactHex ?? "—"}</code></td></tr>)}</tbody></table>{batchCommandRows.length > 50 && <p>当前预览前 50 条，Excel 将导出全部 {batchCommandRows.length} 条。</p>}</div> : <div className="command-empty"><strong>输入批量表号</strong><p>每行粘贴一个表号，右侧会立即生成并校验。</p></div>}
+              {!batchReady && batchCommandRows.length > 0 && <p className="batch-export-hint">修正格式错误或指令参数后，才可导出 Excel，避免遗漏设备。</p>}
+            </div> : activeCommandPreview.result ? <>
+              <div className="command-summary"><div><span>{activeCommandPresentation.primaryLabel}</span><strong>{activeCommandPresentation.primaryValue}</strong></div><div><span>{activeCommandPresentation.secondaryLabel}</span><strong>{activeCommandPresentation.secondaryValue}</strong></div><div><span>校验码 CS</span><strong>{activeCommandPreview.result.checksum}</strong></div></div>
+              <div className="command-output"><div className="command-output-head"><div><strong>完整 HEX 指令</strong><span>{activeCommandPresentation.outputHint}</span></div><button className={actionFeedback === "copy-command" ? "is-success" : ""} type="button" onClick={() => copyText(activeCommandPreview.result!.compactHex, activeCommandPresentation.copyLabel, "copy-command")}><ToolIcon name={actionFeedback === "copy-command" ? "check" : "copy"}/>{actionFeedback === "copy-command" ? "已复制" : "复制指令"}</button></div><textarea readOnly value={activeCommandPreview.result.compactHex} aria-label={activeCommandPresentation.copyLabel}/></div>
+              <div className="command-explanation"><header><strong>字段组成</strong><span>{activeCommandPresentation.fieldHint}</span></header><FieldTable fields={activeCommandPreview.result.fields} selectedField={selectedField} onSelect={setSelectedField}/></div>
             </> : <div className="command-empty"><strong>参数尚未完成</strong><p>修正左侧提示后会自动生成完整指令。</p></div>}
           </section>
         </div>
