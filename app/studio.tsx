@@ -8,16 +8,39 @@ import { sampleList, samples } from "@/lib/protocols/samples";
 import { buildWotmanIpCommand } from "@/lib/protocols/wotman-command";
 import { buildWotmanSyncCommand } from "@/lib/protocols/wotman-sync-command";
 import { buildCollectionIntervalCommand, buildUploadScheduleCommand, buildValveCommand, type ValveAction } from "@/lib/protocols/wotman-control-command";
+import { buildJoymeterCommand, type JoymeterCommandKind, type JoymeterValveAction } from "@/lib/protocols/joymeter-command";
 import { downloadXlsx } from "@/lib/export-xlsx";
 import type { ParseResult, ParsedField } from "@/lib/protocols/types";
 
 type TabId = "overview" | "fields" | "bytes" | "history" | "diagnostics" | "json";
 type AppView = "studio" | "commands" | "library" | "samples" | "records";
 type CommandType = "network" | "sync" | "valve" | "schedule" | "interval";
+type CommandVendor = "wotman" | "joymeter";
 type ActionFeedback = "paste" | "format" | "clear" | "copy-json" | "export-json" | "copy-command" | "export-command" | null;
 type CommandGenerationMode = "single" | "batch";
 
 const defaultCommandInput = { meterAddress: "00430500003821", primaryIp: "60.205.218.69", primaryPort: "6118", apn: "CMNET" };
+const defaultJoymeterInput = { meterAddress: "00510500088954", ip: "60.205.218.69", port: "6118", baseReading: "12345678", valveAction: "open" as JoymeterValveAction, startHour: "3", maxRandomSeconds: "3600", reportPeriodHours: "6" };
+
+const commandProtocols: Array<{ id: CommandVendor; manufacturer: string; product: string; scope: string; keywords: string }> = [
+  { id: "wotman", manufacturer: "沃特曼", product: "采集器 / 大口径水表", scope: "NB-IoT 仪表采集器协议", keywords: "沃特曼 水表 采集器 大口径 NB 8110 A016 8104 8105" },
+  { id: "joymeter", manufacturer: "Joymeter", product: "后付费 NB & 4G 水表", scope: "CJ/T 188 扩展写入协议", keywords: "Joymeter 4G 后付费 水表 A171 A180 A181 A182 A183 A184" },
+];
+
+const commandCatalog: Record<CommandVendor, Array<{ group: string; items: Array<{ id: string; label: string; di: string; keywords: string }> }>> = {
+  wotman: [
+    { group: "通信配置", items: [{ id: "network", label: "写 IP / 端口", di: "8110H", keywords: "通信 服务器 APN IP 端口" }] },
+    { group: "计量设置", items: [{ id: "sync", label: "写机电同步", di: "A016H", keywords: "累计流量 同步 底数" }] },
+    { group: "设备控制", items: [{ id: "valve", label: "阀门控制", di: "A017H", keywords: "开阀 关阀" }] },
+    { group: "数据采集", items: [{ id: "schedule", label: "自动上传时间", di: "8104H", keywords: "上传 时间 定时" }, { id: "interval", label: "采集间隔", di: "8105H", keywords: "采集 间隔 分钟" }] },
+  ],
+  joymeter: [
+    { group: "通信配置", items: [{ id: "network", label: "写 IP / 端口", di: "A184H", keywords: "通信 UDP 服务器 IP 端口" }] },
+    { group: "计量设置", items: [{ id: "base", label: "写基表读数", di: "A171H", keywords: "底数 累计量 读数" }] },
+    { group: "设备控制", items: [{ id: "valve", label: "开关阀", di: "A017H", keywords: "开阀 关阀" }] },
+    { group: "上报配置", items: [{ id: "reporting", label: "上报参数集合", di: "A180H", keywords: "上报 参数 集合" }, { id: "start", label: "上报起始时间", di: "A181H", keywords: "上报 起始 时间" }, { id: "random", label: "最大随机间隔", di: "A182H", keywords: "上报 随机 间隔 秒" }, { id: "period", label: "上报周期", di: "A183H", keywords: "上报 周期 小时" }] },
+  ],
+};
 
 /** 工具栏使用统一的线性图标，避免不同平台的 Emoji 造成视觉尺寸不一致。 */
 function ToolIcon({ name }: { name: "paste" | "format" | "clear" | "copy" | "download" | "check" | "code" }) {
@@ -79,6 +102,7 @@ const tabs: Array<{ id: TabId; label: string }> = [
 ];
 
 const parserCapabilities: Record<string, string[]> = {
+  "joymeter-command": ["A184 写服务器", "A171 写基表读数", "A017 开关阀", "A180–A183 上报参数", "24H 下行 / A4H 应答", "字段反向解析"],
   "wotman-command": ["8110 写通信参数", "A016 写机电同步", "A017 阀门控制", "8104 上传时间", "8105 采集间隔", "字段反向解析"],
   "cjt188-small": ["10H 冷水", "11H 生活热水", "12H 直饮水", "13H 中水", "14H–19H 保留", "CS 校验"],
   "wotman-big": ["9021 / 9023 / 9025", "历史数据", "压力温度", "设备身份", "业务告警"],
@@ -201,7 +225,13 @@ export function ProtocolStudio() {
   const [view, setView] = useState<AppView>("studio");
   const [rawInput, setRawInput] = useState(samples.cjt188.value);
   const [commandInput, setCommandInput] = useState({ ...defaultCommandInput });
+  const [commandVendor, setCommandVendor] = useState<CommandVendor>("wotman");
   const [commandType, setCommandType] = useState<CommandType>("network");
+  const [joymeterCommandType, setJoymeterCommandType] = useState<JoymeterCommandKind>("network");
+  const [joymeterInput, setJoymeterInput] = useState({ ...defaultJoymeterInput });
+  const [protocolPickerOpen, setProtocolPickerOpen] = useState(false);
+  const [protocolSearch, setProtocolSearch] = useState("");
+  const [commandSearch, setCommandSearch] = useState("");
   const [commandGenerationMode, setCommandGenerationMode] = useState<CommandGenerationMode>("single");
   const [batchMeterInput, setBatchMeterInput] = useState("");
   const [syncCommandInput, setSyncCommandInput] = useState({ meterAddress: "00430500003931", cumulativeFlow: "10" });
@@ -308,12 +338,30 @@ export function ProtocolStudio() {
     catch (caught) { return { result: null, error: caught instanceof Error ? caught.message : "采集间隔参数不正确。" }; }
   }, [intervalCommandInput]);
 
-  const activeCommandPreview = commandType === "network" ? commandPreview
+  const joymeterCommandPreview = useMemo(() => {
+    try { return { result: buildJoymeterCommand({ kind: joymeterCommandType, ...joymeterInput }), error: "" }; }
+    catch (caught) { return { result: null, error: caught instanceof Error ? caught.message : "Joymeter 指令参数不正确。" }; }
+  }, [joymeterCommandType, joymeterInput]);
+
+  const activeCommandPreview = commandVendor === "joymeter" ? joymeterCommandPreview : commandType === "network" ? commandPreview
     : commandType === "sync" ? syncCommandPreview
       : commandType === "valve" ? valveCommandPreview
         : commandType === "schedule" ? scheduleCommandPreview
           : intervalCommandPreview;
-  const activeCommandPresentation = commandType === "network"
+  const joymeterPresentation = joymeterCommandType === "network"
+    ? { formTitle: "填写服务器参数", primaryLabel: "Joymeter 服务器", primaryValue: `${joymeterInput.ip}:${joymeterInput.port}`, secondaryLabel: "通信协议", secondaryValue: "UDP · 01H", outputHint: "A184H 数据域共 10 Bytes，可直接复制下发", copyLabel: "Joymeter 写服务器指令", fieldHint: "IP 按网络顺序，端口按小端顺序" }
+    : joymeterCommandType === "base"
+      ? { formTitle: "填写基表读数", primaryLabel: "写入目标", primaryValue: joymeterInput.meterAddress.padStart(14, "0"), secondaryLabel: "基表读数", secondaryValue: `${joymeterInput.baseReading || "—"} L`, outputHint: "A171H 数据域共 8 Bytes，可直接复制下发", copyLabel: "Joymeter 写基表读数指令", fieldHint: "读数使用 4 字节 BCD、小端，末尾固定 00H" }
+      : joymeterCommandType === "valve"
+        ? { formTitle: "填写阀门参数", primaryLabel: "控制目标", primaryValue: joymeterInput.meterAddress.padStart(14, "0"), secondaryLabel: "阀门操作", secondaryValue: joymeterInput.valveAction === "open" ? "开阀 · 55H" : "关阀 · 99H", outputHint: "A017H 数据域共 4 Bytes，可直接复制下发", copyLabel: "Joymeter 开关阀指令", fieldHint: "55H 表示开阀，99H 表示关阀" }
+        : joymeterCommandType === "reporting"
+          ? { formTitle: "填写上报参数", primaryLabel: "写入目标", primaryValue: joymeterInput.meterAddress.padStart(14, "0"), secondaryLabel: "上报方案", secondaryValue: `${joymeterInput.startHour || "—"} 点 / ${joymeterInput.maxRandomSeconds || "—"} 秒 / ${joymeterInput.reportPeriodHours || "—"} 小时`, outputHint: "A180H 一次写入起始时间、随机间隔与周期", copyLabel: "Joymeter 写上报参数集合指令", fieldHint: "起始小时为 BCD；随机间隔为 2 字节小端" }
+          : joymeterCommandType === "start"
+            ? { formTitle: "设置上报起始时间", primaryLabel: "写入目标", primaryValue: joymeterInput.meterAddress.padStart(14, "0"), secondaryLabel: "起始时间", secondaryValue: `${joymeterInput.startHour || "—"} 点`, outputHint: "A181H 数据域共 4 Bytes", copyLabel: "Joymeter 写上报起始时间指令", fieldHint: "0–23 点，按 1 字节 BCD 编码" }
+            : joymeterCommandType === "random"
+              ? { formTitle: "设置最大随机间隔", primaryLabel: "写入目标", primaryValue: joymeterInput.meterAddress.padStart(14, "0"), secondaryLabel: "最大随机间隔", secondaryValue: `${joymeterInput.maxRandomSeconds || "—"} 秒`, outputHint: "A182H 数据域共 5 Bytes", copyLabel: "Joymeter 写最大随机间隔指令", fieldHint: "2 字节无符号整数、小端；不得小于 10 秒" }
+              : { formTitle: "设置上报周期", primaryLabel: "写入目标", primaryValue: joymeterInput.meterAddress.padStart(14, "0"), secondaryLabel: "上报周期", secondaryValue: `${joymeterInput.reportPeriodHours || "—"} 小时`, outputHint: "A183H 数据域共 4 Bytes", copyLabel: "Joymeter 写上报周期指令", fieldHint: "1 字节无符号整数，单位小时" };
+  const activeCommandPresentation = commandVendor === "joymeter" ? joymeterPresentation : commandType === "network"
     ? { formTitle: "填写通信参数", primaryLabel: "主用服务器", primaryValue: `${commandInput.primaryIp}:${commandInput.primaryPort}`, secondaryLabel: "数据区 / 整帧", secondaryValue: `59 / ${activeCommandPreview.result?.bytes.length ?? 0} Bytes`, outputHint: "DI 至 MAC 末字节共 59 Bytes，可直接复制下发", copyLabel: "沃特曼写参数指令", fieldHint: "IP 按网络顺序，端口按小端顺序" }
     : commandType === "sync"
       ? { formTitle: "填写同步参数", primaryLabel: "同步目标", primaryValue: syncCommandInput.meterAddress.padStart(14, "0"), secondaryLabel: "累计流量", secondaryValue: `${syncCommandInput.cumulativeFlow || "—"} m³`, outputHint: "DI 至单位字节共 8 Bytes，可直接复制下发", copyLabel: "沃特曼写机电同步指令", fieldHint: "累计量为 4 字节 BCD、小端，2CH 表示 0.01 m³/计数" }
@@ -323,11 +371,31 @@ export function ProtocolStudio() {
           ? { formTitle: "设置上传时间", primaryLabel: "设置目标", primaryValue: scheduleMeterAddress.padStart(14, "0"), secondaryLabel: "启用时刻", secondaryValue: `${scheduleCommandPreview.result?.enabledCount ?? 0} 个`, outputHint: "8104H 数据区共 51 Bytes，包含 24×2 个分钟值", copyLabel: "沃特曼自动上传时间指令", fieldHint: "每小时两个 1 字节分钟值，留空编码为 FFH" }
           : { formTitle: "设置采集间隔", primaryLabel: "设置目标", primaryValue: intervalCommandInput.meterAddress.padStart(14, "0"), secondaryLabel: "采集间隔", secondaryValue: `${intervalCommandInput.intervalMinutes || "—"} 分钟`, outputHint: "8105H 数据区共 4 Bytes，可直接复制下发", copyLabel: "沃特曼采集间隔指令", fieldHint: "间隔时间使用 1 字节无符号整数" };
 
-  const activeMeterAddress = commandType === "network" ? commandInput.meterAddress
+  const activeMeterAddress = commandVendor === "joymeter" ? joymeterInput.meterAddress : commandType === "network" ? commandInput.meterAddress
     : commandType === "sync" ? syncCommandInput.meterAddress
       : commandType === "valve" ? valveCommandInput.meterAddress
         : commandType === "schedule" ? scheduleMeterAddress
           : intervalCommandInput.meterAddress;
+
+  const currentProtocol = commandProtocols.find((item) => item.id === commandVendor)!;
+  const currentCommandId = commandVendor === "joymeter" ? joymeterCommandType : commandType;
+  const filteredProtocols = commandProtocols.filter((item) => `${item.manufacturer} ${item.product} ${item.scope} ${item.keywords}`.toLowerCase().includes(protocolSearch.trim().toLowerCase()));
+  const visibleCommandGroups = commandCatalog[commandVendor].map((group) => ({
+    ...group,
+    items: group.items.filter((item) => `${item.label} ${item.di} ${item.keywords}`.toLowerCase().includes(commandSearch.trim().toLowerCase())),
+  })).filter((group) => group.items.length);
+  const selectCommand = (id: string) => {
+    if (commandVendor === "joymeter") setJoymeterCommandType(id as JoymeterCommandKind);
+    else setCommandType(id as CommandType);
+    setSelectedField(null);
+  };
+  const selectCommandProtocol = (id: CommandVendor) => {
+    setCommandVendor(id);
+    setProtocolPickerOpen(false);
+    setProtocolSearch("");
+    setCommandSearch("");
+    setSelectedField(null);
+  };
 
   const batchMeterState = useMemo(() => {
     const tokens = batchMeterInput.split(/[\s,，;；]+/).map((item) => item.trim()).filter(Boolean);
@@ -353,7 +421,8 @@ export function ProtocolStudio() {
 
   const batchCommandRows = useMemo(() => batchMeterState.valid.map((meterAddress) => {
     try {
-      const result = commandType === "network" ? buildWotmanIpCommand({ ...commandInput, meterAddress })
+      const result = commandVendor === "joymeter" ? buildJoymeterCommand({ kind: joymeterCommandType, ...joymeterInput, meterAddress })
+        : commandType === "network" ? buildWotmanIpCommand({ ...commandInput, meterAddress })
         : commandType === "sync" ? buildWotmanSyncCommand({ ...syncCommandInput, meterAddress })
           : commandType === "valve" ? buildValveCommand({ ...valveCommandInput, meterAddress })
             : commandType === "schedule" ? buildUploadScheduleCommand({ meterAddress, schedule: uploadSchedule.map(([first, second]) => [first.trim() === "" ? null : Number(first), second.trim() === "" ? null : Number(second)] as [number | null, number | null]) })
@@ -362,9 +431,18 @@ export function ProtocolStudio() {
     } catch (caught) {
       return { meterAddress: meterAddress.padStart(14, "0"), result: null, error: caught instanceof Error ? caught.message : "组帧失败" };
     }
-  }), [batchMeterState.valid, commandInput, commandType, intervalCommandInput, syncCommandInput, uploadSchedule, valveCommandInput]);
+  }), [batchMeterState.valid, commandInput, commandType, commandVendor, intervalCommandInput, joymeterCommandType, joymeterInput, syncCommandInput, uploadSchedule, valveCommandInput]);
 
-  const commandMetadata = commandType === "network" ? { label: "写 IP / 端口", di: "8110H", summary: `${commandInput.primaryIp}:${commandInput.primaryPort} · APN ${commandInput.apn}` }
+  const joymeterMetadata: Record<JoymeterCommandKind, { label: string; di: string; summary: string }> = {
+    network: { label: "写服务器 IP / 端口", di: "A184H", summary: `${joymeterInput.ip}:${joymeterInput.port} · UDP` },
+    base: { label: "写基表读数", di: "A171H", summary: `${joymeterInput.baseReading || "—"} L` },
+    valve: { label: "开关阀", di: "A017H", summary: joymeterInput.valveAction === "open" ? "开阀 · 55H" : "关阀 · 99H" },
+    reporting: { label: "写上报参数集合", di: "A180H", summary: `${joymeterInput.startHour} 点 · ${joymeterInput.maxRandomSeconds} 秒 · ${joymeterInput.reportPeriodHours} 小时` },
+    start: { label: "写上报起始时间", di: "A181H", summary: `${joymeterInput.startHour || "—"} 点` },
+    random: { label: "写最大随机间隔", di: "A182H", summary: `${joymeterInput.maxRandomSeconds || "—"} 秒` },
+    period: { label: "写上报周期", di: "A183H", summary: `${joymeterInput.reportPeriodHours || "—"} 小时` },
+  };
+  const commandMetadata = commandVendor === "joymeter" ? joymeterMetadata[joymeterCommandType] : commandType === "network" ? { label: "写 IP / 端口", di: "8110H", summary: `${commandInput.primaryIp}:${commandInput.primaryPort} · APN ${commandInput.apn}` }
     : commandType === "sync" ? { label: "写机电同步", di: "A016H", summary: `累计流量 ${syncCommandInput.cumulativeFlow || "—"} m³` }
       : commandType === "valve" ? { label: "阀门控制", di: "A017H", summary: valveCommandInput.action === "open" ? "开阀 · 55H" : "关阀 · 99H" }
         : commandType === "schedule" ? { label: "上传时间", di: "8104H", summary: `${scheduleCommandPreview.result?.enabledCount ?? 0} 个上传时刻` }
@@ -377,7 +455,7 @@ export function ProtocolStudio() {
     const now = new Date();
     const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
     downloadXlsx({
-      filename: `沃特曼批量指令_${commandMetadata.di.replace("H", "")}_${stamp}.xlsx`,
+      filename: `${commandVendor === "joymeter" ? "Joymeter" : "沃特曼"}批量指令_${commandMetadata.di.replace("H", "")}_${stamp}.xlsx`,
       sheetName: "批量指令",
       columns: [
         { title: "序号", width: 8 }, { title: "表号", width: 20 }, { title: "指令类型", width: 18 }, { title: "数据标识 DI", width: 15 },
@@ -573,22 +651,55 @@ export function ProtocolStudio() {
       </section>}
 
       {view === "commands" && <section className="page command-page">
-        <div className="page-heading"><div><p className="eyebrow">WOTMAN DOWNLINK COMMAND</p><h1>沃特曼写入指令</h1><span>生成通信、同步、阀门、上传时间与采集间隔指令；反向解析统一在协议解析工作台完成。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回解析工作台</button></div>
-        <div className="command-mode-tabs" role="tablist" aria-label="写入指令类型">
-          <button className={commandType === "network" ? "active" : ""} type="button" role="tab" aria-selected={commandType === "network"} onClick={() => { setCommandType("network"); setSelectedField(null); }}>写 IP / 端口 · 8110H</button>
-          <button className={commandType === "sync" ? "active" : ""} type="button" role="tab" aria-selected={commandType === "sync"} onClick={() => { setCommandType("sync"); setSelectedField(null); }}>写机电同步 · A016H</button>
-          <button className={commandType === "valve" ? "active" : ""} type="button" role="tab" aria-selected={commandType === "valve"} onClick={() => { setCommandType("valve"); setSelectedField(null); }}>阀门控制 · A017H</button>
-          <button className={commandType === "schedule" ? "active" : ""} type="button" role="tab" aria-selected={commandType === "schedule"} onClick={() => { setCommandType("schedule"); setSelectedField(null); }}>上传时间 · 8104H</button>
-          <button className={commandType === "interval" ? "active" : ""} type="button" role="tab" aria-selected={commandType === "interval"} onClick={() => { setCommandType("interval"); setSelectedField(null); }}>采集间隔 · 8105H</button>
-        </div>
-        <div className="command-workbench">
+        <div className="page-heading"><div><p className="eyebrow">DEVICE DOWNLINK COMMAND</p><h1>设备写入指令</h1><span>按厂商协议独立生成写入帧；反向解析统一在协议解析工作台完成。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回解析工作台</button></div>
+        <div className="command-content-layout">
+          <aside className="command-directory" aria-label="指令目录">
+            <header className="command-directory-header">
+              <div className="command-protocol-control">
+                <span>当前协议</span>
+                <button className="command-protocol-trigger" type="button" aria-expanded={protocolPickerOpen} aria-controls="protocol-picker" onClick={() => setProtocolPickerOpen((open) => !open)}>
+                  <span className="protocol-avatar">{currentProtocol.manufacturer.slice(0, 2).toUpperCase()}</span>
+                  <span className="protocol-copy"><strong>{currentProtocol.manufacturer}</strong><small>{currentProtocol.product}</small></span>
+                  <i aria-hidden="true"/>
+                </button>
+                {protocolPickerOpen && <div className="command-protocol-picker" id="protocol-picker" aria-label="协议库选择器">
+                  <label><span className="sr-only">搜索协议</span><input autoFocus value={protocolSearch} placeholder="搜索厂商、设备或协议…" onChange={(event) => setProtocolSearch(event.target.value)}/></label>
+                  <div>{filteredProtocols.map((protocol) => <button className={protocol.id === commandVendor ? "active" : ""} type="button" key={protocol.id} onClick={() => selectCommandProtocol(protocol.id)}><span><strong>{protocol.manufacturer}</strong><small>{protocol.product}</small></span><em>{protocol.id === commandVendor ? "✓" : "选择"}</em></button>)}</div>
+                  {!filteredProtocols.length && <p>没有找到匹配协议</p>}
+                </div>}
+              </div>
+              <div className="command-directory-title"><strong>指令目录</strong><span>{commandCatalog[commandVendor].reduce((total, group) => total + group.items.length, 0)} 项</span></div>
+              <label className="command-search"><span className="sr-only">搜索指令</span><input value={commandSearch} placeholder="搜索名称或 DI…" onChange={(event) => setCommandSearch(event.target.value)}/></label>
+            </header>
+            <nav className="command-flat-list">{visibleCommandGroups.flatMap((group) => group.items).map((item) => <button className={`command-item-button${currentCommandId === item.id ? " active" : ""}`} type="button" aria-current={currentCommandId === item.id ? "page" : undefined} key={item.id} onClick={() => selectCommand(item.id)}><span>{item.label}</span><code>{item.di}</code></button>)}</nav>
+            {!visibleCommandGroups.length && <div className="command-directory-empty">没有匹配指令</div>}
+          </aside>
+          <div className="command-mobile-select">
+            <label><span>设备协议</span><select value={commandVendor} onChange={(event) => selectCommandProtocol(event.target.value as CommandVendor)}>{commandProtocols.map((protocol) => <option value={protocol.id} key={protocol.id}>{protocol.manufacturer} · {protocol.product}</option>)}</select></label>
+            <label><span>当前指令</span><select value={currentCommandId} onChange={(event) => selectCommand(event.target.value)}>{commandCatalog[commandVendor].flatMap((group) => group.items.map((item) => <option value={item.id} key={item.id}>{item.label} · {item.di}</option>))}</select></label>
+          </div>
+          <div className="command-workbench">
           <section className="panel command-form-panel">
             <div className="panel-title"><div><span className="step">01</span><strong>{activeCommandPresentation.formTitle}</strong></div><span className="byte-count">实时组帧</span></div>
             <div className="command-generation-mode" role="group" aria-label="指令生成数量">
               <button className={commandGenerationMode === "single" ? "active" : ""} type="button" onClick={() => setCommandGenerationMode("single")}><strong>单表生成</strong><span>查看完整字段</span></button>
               <button className={commandGenerationMode === "batch" ? "active" : ""} type="button" onClick={() => { setCommandGenerationMode("batch"); if (!batchMeterInput.trim()) setBatchMeterInput(activeMeterAddress); }}><strong>批量表号</strong><span>生成后导出 Excel</span></button>
             </div>
-            {commandType === "network" ? <div className="command-form">
+            {commandVendor === "joymeter" ? <div className="command-form">
+              {renderMeterAddressField("仪表地址", joymeterInput.meterAddress, (meterAddress) => setJoymeterInput((current) => ({ ...current, meterAddress })), "输入展示顺序的表号，最多 14 位；发送时自动按 7 字节 BCD、低字节在前编码。")}
+              {joymeterCommandType === "network" && <>
+                <div className="command-form-row"><label><span>服务器 IP 地址</span><input value={joymeterInput.ip} inputMode="decimal" onChange={(event) => setJoymeterInput((current) => ({ ...current, ip: event.target.value }))}/><small>默认：60.205.218.69</small></label><label><span>服务器端口</span><input value={joymeterInput.port} inputMode="numeric" onChange={(event) => setJoymeterInput((current) => ({ ...current, port: event.target.value }))}/><small>范围 1–65535，按 2 字节小端编码。</small></label></div>
+                <div className="command-fixed-fields"><span>固定协议参数</span><strong>控制码 24H</strong><strong>数据标识 A184H</strong><strong>协议 UDP · 01H</strong><strong>长度 0AH</strong></div>
+              </>}
+              {joymeterCommandType === "base" && <><label><span>基表读数（L）</span><input value={joymeterInput.baseReading} inputMode="numeric" maxLength={8} onChange={(event) => setJoymeterInput((current) => ({ ...current, baseReading: event.target.value }))}/><small>1–8 位整数；按 4 字节 BCD、小端编码，末尾固定追加 00H。</small></label><div className="command-fixed-fields"><span>固定协议参数</span><strong>控制码 24H</strong><strong>数据标识 A171H</strong><strong>长度 08H</strong></div></>}
+              {joymeterCommandType === "valve" && <><fieldset className="command-choice"><legend>阀门操作</legend><label className={joymeterInput.valveAction === "open" ? "active" : ""}><input type="radio" name="joymeter-valve-action" checked={joymeterInput.valveAction === "open"} onChange={() => setJoymeterInput((current) => ({ ...current, valveAction: "open" }))}/><span>开阀</span><small>控制字 55H</small></label><label className={joymeterInput.valveAction === "close" ? "active" : ""}><input type="radio" name="joymeter-valve-action" checked={joymeterInput.valveAction === "close"} onChange={() => setJoymeterInput((current) => ({ ...current, valveAction: "close" }))}/><span>关阀</span><small>控制字 99H</small></label></fieldset><div className="command-fixed-fields"><span>固定协议参数</span><strong>控制码 24H</strong><strong>数据标识 A017H</strong><strong>长度 04H</strong></div></>}
+              {(joymeterCommandType === "reporting" || joymeterCommandType === "start") && <label><span>上报起始时间（0–23 点）</span><input value={joymeterInput.startHour} inputMode="numeric" onChange={(event) => setJoymeterInput((current) => ({ ...current, startHour: event.target.value }))}/><small>按 1 字节 BCD 小时编码，例如 3 点为 03H。</small></label>}
+              {(joymeterCommandType === "reporting" || joymeterCommandType === "random") && <label><span>最大随机间隔（秒）</span><input value={joymeterInput.maxRandomSeconds} inputMode="numeric" onChange={(event) => setJoymeterInput((current) => ({ ...current, maxRandomSeconds: event.target.value }))}/><small>范围 10–65535 秒，按 2 字节无符号整数、小端编码。</small></label>}
+              {(joymeterCommandType === "reporting" || joymeterCommandType === "period") && <label><span>上报周期（小时）</span><input value={joymeterInput.reportPeriodHours} inputMode="numeric" onChange={(event) => setJoymeterInput((current) => ({ ...current, reportPeriodHours: event.target.value }))}/><small>范围 1–255 小时，按 1 字节无符号整数编码。</small></label>}
+              {["reporting", "start", "random", "period"].includes(joymeterCommandType) && <div className="command-fixed-fields"><span>固定协议参数</span><strong>控制码 24H</strong><strong>数据标识 {joymeterMetadata[joymeterCommandType].di}</strong><strong>序列号 00H</strong></div>}
+              {commandGenerationMode === "single" && joymeterCommandPreview.error && <p className="command-error" role="alert">{joymeterCommandPreview.error}</p>}
+              <button className="sample-button command-reset" type="button" onClick={() => setJoymeterInput({ ...defaultJoymeterInput })}>恢复 Joymeter 示例参数</button>
+            </div> : commandType === "network" ? <div className="command-form">
               {renderMeterAddressField("仪表地址", commandInput.meterAddress, (meterAddress) => setCommandInput((current) => ({ ...current, meterAddress })), "输入展示顺序的表号，最多 14 位；发送时自动按低字节在前编码。")}
               <div className="command-form-row">
                 <label><span>主用 IP 地址</span><input value={commandInput.primaryIp} inputMode="decimal" onChange={(event) => setCommandInput((current) => ({ ...current, primaryIp: event.target.value }))}/><small>默认：60.205.218.69</small></label>
@@ -637,11 +748,12 @@ export function ProtocolStudio() {
             </> : <div className="command-empty"><strong>参数尚未完成</strong><p>修正左侧提示后会自动生成完整指令。</p></div>}
           </section>
         </div>
+        </div>
       </section>}
 
       {view === "library" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">PROTOCOL REGISTRY</p><h1>协议能力库</h1><span>查看当前已经接入并可由后台解析内核自动识别的协议。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div><div className="collection-grid">{parsers.map((parser, index) => <article className="collection-card" key={parser.id}><div className="card-top"><span className="protocol-icon">{String(index + 1).padStart(2, "0")}</span><span className="ready-badge">● 可用</span></div><p>{parser.category === "water" ? "水务计量" : parser.category}</p><h2>{parser.name}</h2><code>{parser.id}</code><div className="capability-list">{parserCapabilities[parser.id]?.map((item) => <span key={item}>{item}</span>)}</div><button type="button" onClick={() => setView("studio")}>进入自动解析</button></article>)}</div></section>}
 
-      {view === "samples" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">FRAME PLAYGROUND</p><h1>样例帧</h1><span>无需准备设备数据，选择样例即可验证完整解析链路。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div><div className="sample-grid">{sampleList.map((sample) => <article className="sample-card" key={sample.id}><div><span className="sample-type">{sample.protocolId === "wotman-big" ? "WOTMAN" : "CJ/T 188"}</span><strong>{parseHex(sample.value).length} Bytes</strong></div><h2>{sample.name}</h2><p>{sample.description}</p><code>{sample.value}</code><footer><button type="button" onClick={() => copyText(sample.value, "样例报文")}>复制 HEX</button><button className="primary-link" type="button" onClick={() => useSample(sample)}>载入并解析</button></footer></article>)}</div></section>}
+      {view === "samples" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">FRAME PLAYGROUND</p><h1>样例帧</h1><span>无需准备设备数据，选择样例即可验证完整解析链路。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div><div className="sample-grid">{sampleList.map((sample) => <article className="sample-card" key={sample.id}><div><span className="sample-type">{sample.protocolId === "wotman-big" ? "WOTMAN" : sample.protocolId === "joymeter-command" ? "JOYMETER" : "CJ/T 188"}</span><strong>{parseHex(sample.value).length} Bytes</strong></div><h2>{sample.name}</h2><p>{sample.description}</p><code>{sample.value}</code><footer><button type="button" onClick={() => copyText(sample.value, "样例报文")}>复制 HEX</button><button className="primary-link" type="button" onClick={() => useSample(sample)}>载入并解析</button></footer></article>)}</div></section>}
 
       {view === "records" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">LOCAL HISTORY</p><h1>本机解析记录</h1><span>最近 20 条成功解析，仅保存在当前浏览器。</span></div><div className="heading-actions"><button type="button" disabled={!records.length} onClick={clearRecords}>清空记录</button><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div></div>{records.length ? <div className="record-list">{records.map((record) => <article key={record.id}><div className="record-main"><span>{new Date(record.createdAt).toLocaleString("zh-CN", { hour12: false })}</span><h2>{record.protocol}</h2><p>表号 {record.meterNo} · {record.coreValue}</p></div><code>{record.raw}</code><div><button type="button" onClick={() => copyText(record.raw, "历史报文")}>复制</button><button className="primary-link" type="button" onClick={() => reuseRecord(record)}>重新解析</button></div></article>)}</div> : <div className="large-empty"><span>↺</span><h2>还没有解析记录</h2><p>完成一次报文解析后，它会自动出现在这里。</p><button className="primary-link" type="button" onClick={() => setView("samples")}>使用样例开始</button></div>}</section>}
     </div>

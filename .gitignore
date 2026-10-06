@@ -43,3 +43,8 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# local Codex workspace artifacts and protocol inspection files
+/.codex-guard/
+/design-preview/
+/tmp/

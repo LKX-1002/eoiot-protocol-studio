@@ -108,10 +108,27 @@ function buildWotmanSummary(result: ParseResult): AnalysisSummary {
   };
 }
 
+/** 写入指令展示操作目标、数据标识和写入值，不套用主动上报分析模板。 */
+function buildCommandSummary(result: ParseResult): AnalysisSummary {
+  const valid = !result.diagnostics.some((item) => item.level === "bad");
+  return {
+    level: valid ? "normal" : "abnormal",
+    statusLabel: valid ? "指令完整" : "指令异常",
+    items: [
+      { key: "cumulative", label: "目标设备", value: result.meterNo },
+      { key: "time", label: "数据标识", value: `${result.dataIdentifier}H` },
+      { key: "method", label: "控制码", value: result.controlCode },
+      { key: "signals", label: "写入内容", value: result.coreValue },
+    ],
+    recommendation: valid ? "下发前再次核对目标表号与写入参数。" : "修正长度或校验错误后再下发。",
+  };
+}
+
 /** 协议分发入口；每种协议维护独立规则，避免前端混用字段。 */
 export function buildAnalysisSummary(result: ParseResult): AnalysisSummary {
   if (result.protocolId === "cjt188-small") return buildCjt188Summary(result);
   if (result.protocolId === "wotman-big") return buildWotmanSummary(result);
+  if (result.protocolId === "joymeter-command" || result.protocolId === "wotman-command") return buildCommandSummary(result);
 
   const items: AnalysisItem[] = [
     { key: "cumulative", label: "上报累积量", value: "报文未提供" },

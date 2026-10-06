@@ -19,6 +19,20 @@ export const samples = {
     description: "小口径水表主动上报，包含计量、时间、状态及 4G 网络信息。",
     value: "FE FE 68 10 46 43 47 00 05 51 00 81 26 90 20 00 56 11 00 00 29 95 01 00 00 29 46 00 03 31 08 26 20 00 00 00 00 00 00 00 00 29 30 FF FF FF FF 5C 0A 0F 14 EA 16",
   },
+  joymeterNetwork: {
+    id: "joymeter-a184-network",
+    name: "Joymeter 写服务器 IP / 端口",
+    protocolId: "joymeter-command",
+    description: "A184H 下行写入帧：UDP、60.205.218.69、端口 6118。",
+    value: "FE FE 68 10 54 89 08 00 05 51 00 24 0A A1 84 00 01 3C CD DA 45 E6 17 2C 16",
+  },
+  joymeterBase: {
+    id: "joymeter-a171-base",
+    name: "Joymeter 写基表读数",
+    protocolId: "joymeter-command",
+    description: "A171H 下行写入帧：将基表读数写为 12345678 L。",
+    value: "FE FE 68 10 54 89 08 00 05 51 00 24 08 A1 71 00 78 56 34 12 00 05 16",
+  },
   wotman9021: {
     id: "wotman-9021-history",
     name: "沃特曼 9021 历史数据",
