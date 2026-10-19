@@ -11,6 +11,7 @@ import {
   validateFrameEnvelope,
 } from "./bytes";
 import { getWaterMeterType } from "./meter-types";
+import { parseJoymeterStatus } from "./joymeter-status";
 import type { Diagnostic, ParseResult, ProtocolParser } from "./types";
 
 /** Joymeter 小口径水表实际使用的控制码。 */
@@ -157,19 +158,6 @@ function parseJoymeterTime(raw: number[]): string {
   return `${century}${year}-${month}-${day} ${hour}:${minute}:${second}`;
 }
 
-/** 两字节设备状态，低位在前；位定义来自 Joymeter 协议。 */
-function parseStatus(raw: number[]) {
-  const status = (raw[0] ?? 0) | ((raw[1] ?? 0) << 8);
-  const valveCode = status & 0x03;
-  const valveStatus = valveCode === 0 ? "开启" : valveCode === 1 ? "关闭" : valveCode === 2 ? "执行中" : "阀门异常";
-  const alarms = [
-    [2, "电池欠压"], [3, "空管"], [4, "气泡"], [5, "温度传感器异常"],
-    [6, "存储异常"], [7, "磁干扰"], [8, "拆卸告警"], [9, "过流告警"],
-    [10, "反向流量"], [11, "流量传感器异常"], [12, "漏水告警"], [13, "反向安装"],
-  ].filter(([bit]) => (status & (1 << Number(bit))) !== 0).map(([, label]) => String(label));
-  return { valveStatus, alarms, status };
-}
-
 /** 判断帧中的 CS 是否与实际累加和一致，用于识别评分。 */
 function hasValidChecksum(bytes: number[], start: number): boolean {
   if (start < 0 || bytes.at(-1) !== 0x16 || bytes.length < 2) return false;
@@ -186,7 +174,7 @@ function isValidAddress(address: number[]): boolean {
 
 export const cjt188Parser: ProtocolParser = {
   id: "cjt188-small",
-  name: "Joymeter · CJ/T 188 小口径水表",
+  name: "Joymeter 4G · 小口径水表",
   category: "water",
   status: "ready",
 
@@ -266,7 +254,7 @@ export const cjt188Parser: ProtocolParser = {
       const timeOffset = dataOffset + 13;
       const statusOffset = dataOffset + 20;
       const reverseOffset = dataOffset + 24;
-      const status = parseStatus(safeSlice(bytes, statusOffset, 2));
+      const status = parseJoymeterStatus(safeSlice(bytes, statusOffset, 2));
       currentFlow = parseFlow(bytes, currentOffset);
       settlementFlow = parseFlow(bytes, settlementOffset);
       reverseFlow = parseFlow(bytes, reverseOffset);
@@ -287,7 +275,7 @@ export const cjt188Parser: ProtocolParser = {
         field(bytes, settlementOffset, 4, "结算日流量", formatNumber(settlementFlow.value, 3), { unit: "m³", note: "原始值为 4 字节 BCD，低位在前", tone: "value" }),
         field(bytes, settlementOffset + 4, 1, "单位 L", settlementFlow.sourceLabel, { note: `单位码 ${hexByte(settlementFlow.unitCode)}H`, tone: "value" }),
         field(bytes, timeOffset, 7, "上报时间", meterTime, { note: "秒、分、时、日、月、年、世纪，BCD", tone: "meta" }),
-        field(bytes, statusOffset, 2, "状态 ST", `${valveStatus} / ${statusText}`, { note: `原始状态字 0x${status.status.toString(16).padStart(4, "0").toUpperCase()}`, tone: "status" }),
+        field(bytes, statusOffset, 2, "状态 ST", `${valveStatus} / ${statusText}`, { note: `原始状态字 0x${status.rawHex}`, tone: "status" }),
         field(bytes, dataOffset + 22, 1, "冻结控制字", bytes[dataOffset + 22] === 0x01 ? "开启冻结" : bytes[dataOffset + 22] === 0x00 ? "关闭冻结" : "未知状态", { note: `${hexByte(bytes[dataOffset + 22])}H：00=关闭，01=开启`, tone: "meta" }),
         field(bytes, dataOffset + 23, 1, "复位次数", String(bytes[dataOffset + 23]), { note: "无符号整数", tone: "meta" }),
         field(bytes, reverseOffset, 4, "反向流量", formatNumber(reverseFlow.value, 3), { unit: "m³", note: "4 字节 BCD，低位在前", tone: "value" }),
@@ -345,10 +333,10 @@ export const cjt188Parser: ProtocolParser = {
     );
 
     return {
-      protocol: `Joymeter · CJ/T 188 ${type.label}`,
+      protocol: `Joymeter 4G · CJ/T 188 ${type.label}`,
       protocolId: this.id,
       category: "water",
-      categoryLabel: "小口径水表协议",
+      categoryLabel: "Joymeter 4G 小口径水表",
       manufacturer: "Joymeter",
       confidence: this.detect(bytes),
       meterNo: meterAddress(bytes, start),

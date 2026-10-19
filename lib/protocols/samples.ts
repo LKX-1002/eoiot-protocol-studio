@@ -12,9 +12,16 @@ function withChecksum(frameWithoutChecksum: number[]) {
  * 9020、9023、9025 使用用户提供的真实帧；HTML 末尾空格标记不属于报文，未写入样例值。
  */
 export const samples = {
+  joymeterMbus: {
+    id: "joymeter-mbus-901f-report",
+    name: "Joymeter MBus 901F 抄表应答",
+    protocolId: "joymeter-mbus",
+    description: "MBus 小口径水表应答，包含当前累计量、结算日累计量、表时间及两字节状态字。",
+    value: "FE FE 68 10 46 01 43 00 05 51 00 81 16 90 1F 00 55 08 02 00 29 22 08 01 00 29 FF FF FF FF FF FF FF 04 00 77 16",
+  },
   cjt188: {
     id: "joymeter-9020-report",
-    name: "Joymeter 9020 主动上报",
+    name: "Joymeter 4G 9020 主动上报",
     protocolId: "cjt188-small",
     description: "小口径水表主动上报，包含计量、时间、状态及 4G 网络信息。",
     value: "FE FE 68 10 46 43 47 00 05 51 00 81 26 90 20 00 56 11 00 00 29 95 01 00 00 29 46 00 03 31 08 26 20 00 00 00 00 00 00 00 00 29 30 FF FF FF FF 5C 0A 0F 14 EA 16",

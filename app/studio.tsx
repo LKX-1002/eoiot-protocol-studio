@@ -104,9 +104,20 @@ const tabs: Array<{ id: TabId; label: string }> = [
 const parserCapabilities: Record<string, string[]> = {
   "joymeter-command": ["A184 写服务器", "A171 写基表读数", "A017 开关阀", "A180–A183 上报参数", "24H 下行 / A4H 应答", "字段反向解析"],
   "wotman-command": ["8110 写通信参数", "A016 写机电同步", "A017 阀门控制", "8104 上传时间", "8105 采集间隔", "字段反向解析"],
-  "cjt188-small": ["10H 冷水", "11H 生活热水", "12H 直饮水", "13H 中水", "14H–19H 保留", "CS 校验"],
+  "joymeter-mbus": ["901F 抄表请求/应答", "当前与结算累计量", "两字节状态字", "阀门与 12 项告警", "CS 校验"],
+  "cjt188-small": ["4G 9020 主动上报", "10H–19H 水表类型", "累计与反向流量", "网络状态", "CS 校验"],
   "wotman-big": ["9021 / 9023 / 9025", "历史数据", "压力温度", "设备身份", "业务告警"],
 };
+
+const protocolCenterMeta: Record<string, { vendor: string; product: string; short: string }> = {
+  "joymeter-command": { vendor: "Joymeter", product: "4G 水表写入指令", short: "4G 写入" },
+  "joymeter-mbus": { vendor: "Joymeter", product: "MBus 小口径水表", short: "MBus" },
+  "cjt188-small": { vendor: "Joymeter", product: "4G 小口径水表", short: "4G 水表" },
+  "wotman-command": { vendor: "沃特曼", product: "采集器下行写入指令", short: "写入指令" },
+  "wotman-big": { vendor: "沃特曼", product: "大口径水表上报协议", short: "大口径水表" },
+};
+
+const protocolCenterVendors = ["Joymeter", "沃特曼"];
 
 function formatMetric(value: string | number | null, unit?: string) {
   if (value === null || value === "—") return "—";
@@ -247,6 +258,9 @@ export function ProtocolStudio() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
+  const [protocolCenterSearch, setProtocolCenterSearch] = useState("");
+  const [selectedProtocolId, setSelectedProtocolId] = useState("joymeter-mbus");
+  const [selectedSampleId, setSelectedSampleId] = useState(samples.joymeterMbus.id);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rawInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -306,6 +320,20 @@ export function ProtocolStudio() {
       return { valid: false, count, text: caught instanceof Error ? caught.message : "HEX 或帧结构错误" };
     }
   }, [rawInput]);
+
+  const protocolCenterQuery = protocolCenterSearch.trim().toLowerCase();
+  const visibleProtocols = parsers.filter((parser) => {
+    const meta = protocolCenterMeta[parser.id];
+    const searchable = [parser.name, parser.id, meta?.vendor, meta?.product, ...(parserCapabilities[parser.id] ?? [])].join(" ").toLowerCase();
+    return !protocolCenterQuery || searchable.includes(protocolCenterQuery);
+  });
+  const activeProtocol = visibleProtocols.find((parser) => parser.id === selectedProtocolId) ?? visibleProtocols[0] ?? null;
+  const visibleSamples = sampleList.filter((sample) => {
+    const meta = protocolCenterMeta[sample.protocolId];
+    const searchable = [sample.name, sample.description, sample.protocolId, meta?.vendor, meta?.product].join(" ").toLowerCase();
+    return !protocolCenterQuery || searchable.includes(protocolCenterQuery);
+  });
+  const activeSample = visibleSamples.find((sample) => sample.id === selectedSampleId) ?? visibleSamples[0] ?? null;
 
   /** 解析结果变化时同步生成本地规则结论，不上传设备报文。 */
   const analysis = useMemo(() => result ? buildAnalysisSummary(result) : null, [result]);
@@ -585,8 +613,7 @@ export function ProtocolStudio() {
         <p className="nav-title">工作台</p>
         <button className={`nav-item${view === "studio" ? " active" : ""}`} type="button" onClick={() => setView("studio")}><NavIcon name="parser"/><b>协议解析</b></button>
         <button className={`nav-item${view === "commands" ? " active" : ""}`} type="button" onClick={() => setView("commands")}><NavIcon name="command"/><b>指令生成</b></button>
-        <button className={`nav-item${view === "library" ? " active" : ""}`} type="button" onClick={() => setView("library")}><NavIcon name="library"/><b>协议库</b></button>
-        <button className={`nav-item${view === "samples" ? " active" : ""}`} type="button" onClick={() => setView("samples")}><NavIcon name="sample"/><b>样例帧</b></button>
+        <button className={`nav-item${view === "library" || view === "samples" ? " active" : ""}`} type="button" onClick={() => setView("library")}><NavIcon name="library"/><b>协议中心</b></button>
         <button className={`nav-item${view === "records" ? " active" : ""}`} type="button" onClick={() => setView("records")}><NavIcon name="history"/><b>解析记录</b></button>
         <p className="nav-title">云端能力</p>
         <button className="nav-item is-disabled" type="button" disabled><NavIcon name="device"/><b>设备与上报</b><em>规划中</em></button>
@@ -601,7 +628,7 @@ export function ProtocolStudio() {
           <section className="panel input-panel">
             <div className="panel-title"><div><span className="step">01</span><strong>输入原始帧</strong></div><span className="byte-count">{inputState.count} Bytes</span></div>
             <div className="input-body">
-              <div className="auto-recognition"><ToolIcon name="format"/><div><strong>协议与端序自动识别</strong><p>同一输入框支持 Joymeter 小口径和沃特曼大口径报文，无需手动选择。</p></div></div>
+              <div className="auto-recognition"><ToolIcon name="format"/><div><strong>协议与端序自动识别</strong><p>支持 Joymeter 4G、Joymeter MBus 和沃特曼大口径报文，无需手动选择。</p></div></div>
               <div className={`hex-editor${!inputState.valid ? " has-error" : ""}`}>
                 <div className="editor-toolbar"><span className="editor-label"><ToolIcon name="code"/>HEX / RAW FRAME</span><div className="tool-actions"><button className={actionFeedback === "paste" ? "is-success" : ""} type="button" onClick={pasteFrame}>{actionFeedback === "paste" ? <ToolIcon name="check"/> : <ToolIcon name="paste"/>}<span>{actionFeedback === "paste" ? "已粘贴" : "粘贴"}</span></button><button className={actionFeedback === "format" ? "is-success" : ""} type="button" onClick={formatInput}>{actionFeedback === "format" ? <ToolIcon name="check"/> : <ToolIcon name="format"/>}<span>{actionFeedback === "format" ? "已格式化" : "格式化"}</span></button><button className={actionFeedback === "clear" ? "is-success" : ""} type="button" onClick={clearFrame}>{actionFeedback === "clear" ? <ToolIcon name="check"/> : <ToolIcon name="clear"/>}<span>{actionFeedback === "clear" ? "已清空" : "清空"}</span></button></div></div>
                 <div className="editor-main"><textarea ref={rawInputRef} value={rawInput} onChange={(event) => { setRawInput(event.target.value); setError(""); setResult(null); setSelectedField(null); setMessage("报文已修改，等待重新解析"); }} wrap="soft" spellCheck={false} aria-label="原始十六进制报文" placeholder="粘贴 HEX 报文，支持空格、换行、逗号和 0x 前缀"/></div>
@@ -627,7 +654,7 @@ export function ProtocolStudio() {
               <div className="tab-content">
                 {activeTab === "overview" && <>
                   {analysis && result.protocolId !== "wotman-command" && <section className={`analysis-card analysis-${analysis.level}`} aria-label="分析结论">
-                    <header><div><span className="analysis-icon">{analysis.level === "normal" ? "✓" : analysis.level === "abnormal" ? "×" : "!"}</span><strong>上报分析</strong></div><span className="analysis-status">{analysis.statusLabel}</span></header>
+                    <header><div><span className="analysis-icon">{analysis.level === "normal" ? "✓" : analysis.level === "abnormal" ? "×" : "!"}</span><strong>{analysis.title}</strong></div><span className="analysis-status">{analysis.statusLabel}</span></header>
                     <div className="analysis-body">
                       <div className="analysis-summary-grid">{analysis.items.map((item) => <article className={`analysis-item analysis-item-${item.key}`} key={item.key}><span>{item.label}</span><strong>{item.value}</strong>{item.note && <small>{item.note}</small>}</article>)}</div>
                       <p className="analysis-advice"><strong>建议</strong>{analysis.recommendation}</p>
@@ -751,19 +778,49 @@ export function ProtocolStudio() {
         </div>
       </section>}
 
-      {view === "library" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">PROTOCOL REGISTRY</p><h1>协议能力库</h1><span>查看当前已经接入并可由后台解析内核自动识别的协议。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div><div className="collection-grid">{parsers.map((parser, index) => <article className="collection-card" key={parser.id}><div className="card-top"><span className="protocol-icon">{String(index + 1).padStart(2, "0")}</span><span className="ready-badge">● 可用</span></div><p>{parser.category === "water" ? "水务计量" : parser.category}</p><h2>{parser.name}</h2><code>{parser.id}</code><div className="capability-list">{parserCapabilities[parser.id]?.map((item) => <span key={item}>{item}</span>)}</div><button type="button" onClick={() => setView("studio")}>进入自动解析</button></article>)}</div></section>}
+      {(view === "library" || view === "samples") && <section className="page protocol-center-page">
+        <div className="page-heading"><div><p className="eyebrow">PROTOCOL CENTER</p><h1>协议中心</h1><span>集中查看已接入协议的能力、样例与解析入口。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div>
+        <div className="protocol-center-toolbar">
+          <div className="protocol-center-tabs" role="tablist" aria-label="协议中心内容"><button className={view === "library" ? "active" : ""} type="button" role="tab" aria-selected={view === "library"} onClick={() => setView("library")}><NavIcon name="library"/><span>协议能力</span><em>{parsers.length}</em></button><button className={view === "samples" ? "active" : ""} type="button" role="tab" aria-selected={view === "samples"} onClick={() => setView("samples")}><NavIcon name="sample"/><span>样例帧</span><em>{sampleList.length}</em></button></div>
+          <label className="protocol-center-search"><span className="visually-hidden">搜索协议中心</span><input value={protocolCenterSearch} onChange={(event) => setProtocolCenterSearch(event.target.value)} placeholder={view === "library" ? "搜索协议、厂商或能力" : "搜索样例、协议或 DI"}/>{protocolCenterSearch && <button type="button" onClick={() => setProtocolCenterSearch("")}>清除</button>}</label>
+        </div>
+        <div className="protocol-center-layout">
+          <aside className="protocol-center-directory" aria-label={view === "library" ? "协议目录" : "样例目录"}>
+            <header><strong>{view === "library" ? "协议目录" : "样例目录"}</strong><span>{view === "library" ? visibleProtocols.length : visibleSamples.length} 项</span></header>
+            {protocolCenterVendors.map((vendor) => {
+              const vendorProtocols = visibleProtocols.filter((parser) => protocolCenterMeta[parser.id]?.vendor === vendor);
+              const vendorSamples = visibleSamples.filter((sample) => protocolCenterMeta[sample.protocolId]?.vendor === vendor);
+              const entries = view === "library" ? vendorProtocols : vendorSamples;
+              if (!entries.length) return null;
+              return <section className="protocol-directory-group" key={vendor}><h2>{vendor}</h2><div>{view === "library" ? vendorProtocols.map((parser) => <button className={activeProtocol?.id === parser.id ? "active" : ""} type="button" key={parser.id} onClick={() => setSelectedProtocolId(parser.id)}><span className="protocol-directory-mark">{protocolCenterMeta[parser.id]?.short.slice(0, 2)}</span><span><strong>{protocolCenterMeta[parser.id]?.product ?? parser.name}</strong><small>{parser.id}</small></span><i aria-hidden="true"/></button>) : vendorSamples.map((sample) => <button className={activeSample?.id === sample.id ? "active" : ""} type="button" key={sample.id} onClick={() => setSelectedSampleId(sample.id)}><span className="protocol-directory-mark">{protocolCenterMeta[sample.protocolId]?.short.slice(0, 2)}</span><span><strong>{sample.name}</strong><small>{parseHex(sample.value).length} Bytes</small></span><i aria-hidden="true"/></button>)}</div></section>;
+            })}
+            {((view === "library" && !visibleProtocols.length) || (view === "samples" && !visibleSamples.length)) && <div className="protocol-directory-empty"><strong>没有匹配结果</strong><span>换个关键词试试</span></div>}
+          </aside>
 
-      {view === "samples" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">FRAME PLAYGROUND</p><h1>样例帧</h1><span>无需准备设备数据，选择样例即可验证完整解析链路。</span></div><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div><div className="sample-grid">{sampleList.map((sample) => <article className="sample-card" key={sample.id}><div><span className="sample-type">{sample.protocolId === "wotman-big" ? "WOTMAN" : sample.protocolId === "joymeter-command" ? "JOYMETER" : "CJ/T 188"}</span><strong>{parseHex(sample.value).length} Bytes</strong></div><h2>{sample.name}</h2><p>{sample.description}</p><code>{sample.value}</code><footer><button type="button" onClick={() => copyText(sample.value, "样例报文")}>复制 HEX</button><button className="primary-link" type="button" onClick={() => useSample(sample)}>载入并解析</button></footer></article>)}</div></section>}
+          {view === "library" ? activeProtocol && <article className="protocol-center-detail">
+            <header className="protocol-detail-hero"><div><span>{protocolCenterMeta[activeProtocol.id]?.vendor}</span><h2>{activeProtocol.name}</h2><code>{activeProtocol.id}</code></div><strong className="protocol-ready"><i/>可用</strong></header>
+            <div className="protocol-detail-stats"><div><span>产品方向</span><strong>{protocolCenterMeta[activeProtocol.id]?.product}</strong></div><div><span>协议分类</span><strong>{activeProtocol.category === "water" ? "水务计量" : activeProtocol.category}</strong></div><div><span>已接入能力</span><strong>{parserCapabilities[activeProtocol.id]?.length ?? 0} 项</strong></div><div><span>关联样例</span><strong>{sampleList.filter((sample) => sample.protocolId === activeProtocol.id).length} 条</strong></div></div>
+            <section className="protocol-capabilities"><header><div><strong>支持能力</strong><span>自动识别与字段解析范围</span></div></header><ul>{parserCapabilities[activeProtocol.id]?.map((item) => <li key={item}><span>✓</span><strong>{item}</strong></li>)}</ul></section>
+            <section className="protocol-related-samples"><header><div><strong>关联样例</strong><span>使用真实格式验证解析链路</span></div><button type="button" onClick={() => { const firstSample = sampleList.find((sample) => sample.protocolId === activeProtocol.id); if (firstSample) setSelectedSampleId(firstSample.id); setView("samples"); }}>查看全部样例</button></header>{sampleList.filter((sample) => sample.protocolId === activeProtocol.id).length ? <div>{sampleList.filter((sample) => sample.protocolId === activeProtocol.id).slice(0, 3).map((sample) => <button type="button" key={sample.id} onClick={() => { setSelectedSampleId(sample.id); setView("samples"); }}><span><strong>{sample.name}</strong><small>{sample.description}</small></span><em>{parseHex(sample.value).length} Bytes</em></button>)}</div> : <p>当前协议暂无内置样例，可直接进入自动解析。</p>}</section>
+            <footer className="protocol-detail-actions"><button type="button" onClick={() => setView("studio")}>进入自动解析</button></footer>
+          </article> : activeSample && <article className="protocol-center-detail sample-detail">
+            <header className="protocol-detail-hero"><div><span>{protocolCenterMeta[activeSample.protocolId]?.vendor} · {protocolCenterMeta[activeSample.protocolId]?.product}</span><h2>{activeSample.name}</h2><code>{activeSample.protocolId}</code></div><strong className="sample-byte-badge">{parseHex(activeSample.value).length} Bytes</strong></header>
+            <p className="sample-detail-description">{activeSample.description}</p>
+            <section className="sample-code-panel"><header><div><strong>完整 HEX 报文</strong><span>保留原始字节顺序，可直接复制或载入工作台</span></div><button type="button" onClick={() => copyText(activeSample.value, "样例报文")}>复制 HEX</button></header><code>{activeSample.value}</code></section>
+            <div className="sample-detail-info"><div><span>所属厂商</span><strong>{protocolCenterMeta[activeSample.protocolId]?.vendor}</strong></div><div><span>协议模块</span><strong>{protocolCenterMeta[activeSample.protocolId]?.product}</strong></div><div><span>数据长度</span><strong>{parseHex(activeSample.value).length} Bytes</strong></div></div>
+            <footer className="protocol-detail-actions"><button type="button" onClick={() => useSample(activeSample)}>载入并解析</button></footer>
+          </article>}
+        </div>
+      </section>}
 
       {view === "records" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">LOCAL HISTORY</p><h1>本机解析记录</h1><span>最近 20 条成功解析，仅保存在当前浏览器。</span></div><div className="heading-actions"><button type="button" disabled={!records.length} onClick={clearRecords}>清空记录</button><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div></div>{records.length ? <div className="record-list">{records.map((record) => <article key={record.id}><div className="record-main"><span>{new Date(record.createdAt).toLocaleString("zh-CN", { hour12: false })}</span><h2>{record.protocol}</h2><p>表号 {record.meterNo} · {record.coreValue}</p></div><code>{record.raw}</code><div><button type="button" onClick={() => copyText(record.raw, "历史报文")}>复制</button><button className="primary-link" type="button" onClick={() => reuseRecord(record)}>重新解析</button></div></article>)}</div> : <div className="large-empty"><span>↺</span><h2>还没有解析记录</h2><p>完成一次报文解析后，它会自动出现在这里。</p><button className="primary-link" type="button" onClick={() => setView("samples")}>使用样例开始</button></div>}</section>}
     </div>
 
-    {/* 手机端使用固定底部导航，避免侧栏隐藏后协议库、样例和记录失去入口。 */}
+    {/* 手机端使用固定底部导航，避免侧栏隐藏后协议中心和记录失去入口。 */}
     <nav className="mobile-navigation" aria-label="手机端主导航">
       <button className={view === "studio" ? "active" : ""} type="button" aria-current={view === "studio" ? "page" : undefined} onClick={() => setView("studio")}><NavIcon name="parser"/><span>协议解析</span></button>
       <button className={view === "commands" ? "active" : ""} type="button" aria-current={view === "commands" ? "page" : undefined} onClick={() => setView("commands")}><NavIcon name="command"/><span>指令生成</span></button>
-      <button className={view === "library" ? "active" : ""} type="button" aria-current={view === "library" ? "page" : undefined} onClick={() => setView("library")}><NavIcon name="library"/><span>协议库</span></button>
-      <button className={view === "samples" ? "active" : ""} type="button" aria-current={view === "samples" ? "page" : undefined} onClick={() => setView("samples")}><NavIcon name="sample"/><span>样例帧</span></button>
+      <button className={view === "library" || view === "samples" ? "active" : ""} type="button" aria-current={view === "library" || view === "samples" ? "page" : undefined} onClick={() => setView("library")}><NavIcon name="library"/><span>协议中心</span></button>
       <button className={view === "records" ? "active" : ""} type="button" aria-current={view === "records" ? "page" : undefined} onClick={() => setView("records")}><NavIcon name="history"/><span>解析记录</span></button>
     </nav>
     {toast && <div className="toast" role="status">✓ {toast}</div>}

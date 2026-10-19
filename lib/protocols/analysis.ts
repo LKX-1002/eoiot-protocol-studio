@@ -13,6 +13,7 @@ export interface AnalysisItem {
 
 /** 面向售前、调试和售后的精简分析结果。 */
 export interface AnalysisSummary {
+  title: string;
   level: AnalysisLevel;
   statusLabel: string;
   items: AnalysisItem[];
@@ -68,12 +69,36 @@ function buildCjt188Summary(result: ParseResult): AnalysisSummary {
   ];
   const level = resolveLevel(result, items);
   return {
+    title: "上报分析",
     level,
     statusLabel: level === "normal" ? "数据完整" : level === "abnormal" ? "解析异常" : "部分缺失",
     items,
     recommendation: level === "normal"
       ? "结合项目现场设定的信号阈值判断通信质量。"
       : "补充完整主动上报报文后再次分析。",
+  };
+}
+
+/** MBus 抄表帧没有 4G 信号字段，改为展示结算量和水表状态。 */
+function buildJoymeterMbusSummary(result: ParseResult): AnalysisSummary {
+  const items: AnalysisItem[] = [
+    { key: "cumulative", label: "当前累计流量", value: flowText(result, "currentFlow") },
+    { key: "time", label: "水表时间", value: metricText(result, "meterTime") },
+    { key: "method", label: "结算日累计量", value: flowText(result, "settlementFlow") },
+    {
+      key: "signals",
+      label: "水表状态",
+      value: metricText(result, "statusInfo"),
+      note: `状态字 ${metricText(result, "statusWord")}`,
+    },
+  ];
+  const level = resolveLevel(result, items);
+  return {
+    title: "抄表分析",
+    level,
+    statusLabel: level === "normal" ? "数据完整" : level === "abnormal" ? "解析异常" : "部分缺失",
+    items,
+    recommendation: level === "normal" ? "状态字已按 Joymeter 两字节位定义展开。" : "请检查累计量、时间或状态字段是否完整。",
   };
 }
 
@@ -99,6 +124,7 @@ function buildWotmanSummary(result: ParseResult): AnalysisSummary {
   ];
   const level = resolveLevel(result, items);
   return {
+    title: "上报分析",
     level,
     statusLabel: level === "normal" ? "数据完整" : level === "abnormal" ? "解析异常" : "部分缺失",
     items,
@@ -112,6 +138,7 @@ function buildWotmanSummary(result: ParseResult): AnalysisSummary {
 function buildCommandSummary(result: ParseResult): AnalysisSummary {
   const valid = !result.diagnostics.some((item) => item.level === "bad");
   return {
+    title: "指令分析",
     level: valid ? "normal" : "abnormal",
     statusLabel: valid ? "指令完整" : "指令异常",
     items: [
@@ -126,6 +153,7 @@ function buildCommandSummary(result: ParseResult): AnalysisSummary {
 
 /** 协议分发入口；每种协议维护独立规则，避免前端混用字段。 */
 export function buildAnalysisSummary(result: ParseResult): AnalysisSummary {
+  if (result.protocolId === "joymeter-mbus") return buildJoymeterMbusSummary(result);
   if (result.protocolId === "cjt188-small") return buildCjt188Summary(result);
   if (result.protocolId === "wotman-big") return buildWotmanSummary(result);
   if (result.protocolId === "joymeter-command" || result.protocolId === "wotman-command") return buildCommandSummary(result);
@@ -137,6 +165,7 @@ export function buildAnalysisSummary(result: ParseResult): AnalysisSummary {
     { key: "signals", label: "信号值", value: "报文未提供" },
   ];
   return {
+    title: "报文分析",
     level: "attention",
     statusLabel: "规则待配置",
     items,
