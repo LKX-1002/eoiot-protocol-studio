@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { hex, parseHex } from "@/lib/protocols/bytes";
 import { buildAnalysisSummary } from "@/lib/protocols/analysis";
 import { parseWithRegistry, parsers, validateWithRegistry } from "@/lib/protocols/registry";
@@ -254,6 +254,9 @@ export function ProtocolStudio() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [selectedField, setSelectedField] = useState<ParsedField | null>(null);
   const [records, setRecords] = useState<ParseRecord[]>([]);
+  const [recordSearch, setRecordSearch] = useState("");
+  const [recordProtocol, setRecordProtocol] = useState("");
+  const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
   const [message, setMessage] = useState("已载入示例，可直接体验解析结果");
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
@@ -593,8 +596,39 @@ export function ProtocolStudio() {
     URL.revokeObjectURL(url); setActionFeedback("export-json");
   };
 
-  const reuseRecord = (record: ParseRecord) => { setRawInput(record.raw); setView("studio"); setMessage("已恢复历史报文，按 Ctrl + Enter 重新解析"); };
-  const clearRecords = () => { setRecords([]); window.localStorage.removeItem("eoiot-records"); setToast("本机记录已清空"); };
+  const reuseRecord = (record: ParseRecord) => {
+    setRawInput(record.raw); setView("studio"); setSelectedField(null); setActiveTab("overview");
+    try {
+      const bytes = parseHex(record.raw);
+      const parsed = parseWithRegistry(bytes);
+      setRawInput(hex(bytes)); setResult(parsed); setError("");
+      setMessage(`${parsed.protocol} · 历史报文重新解析成功`);
+      remember(parsed, hex(bytes));
+    } catch (caught) {
+      setResult(null); setMessage("历史报文解析失败");
+      setError(caught instanceof Error ? caught.message : "解析失败，请检查报文。");
+    }
+  };
+  const clearRecords = () => {
+    if (!window.confirm(`确定清空全部 ${records.length} 条解析记录？清空后无法恢复。`)) return;
+    setRecords([]); setExpandedRecordId(null); setRecordProtocol(""); setRecordSearch("");
+    window.localStorage.removeItem("eoiot-records"); setToast("本机记录已清空");
+  };
+  const deleteRecord = (id: string) => {
+    setRecords((current) => {
+      const next = current.filter((record) => record.id !== id);
+      window.localStorage.setItem("eoiot-records", JSON.stringify(next));
+      return next;
+    });
+    if (expandedRecordId === id) setExpandedRecordId(null);
+    setToast("记录已删除");
+  };
+  const recordProtocols = [...new Set(records.map((record) => record.protocol))];
+  const visibleRecords = records.filter((record) => {
+    const query = recordSearch.trim().toLowerCase();
+    return (!recordProtocol || record.protocol === recordProtocol)
+      && (!query || `${record.meterNo} ${record.protocol} ${record.coreValue}`.toLowerCase().includes(query));
+  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const renderMeterAddressField = (label: string, value: string, onChange: (value: string) => void, note: string) => commandGenerationMode === "batch"
     ? <label className="batch-meter-field"><span>批量表号</span><textarea value={batchMeterInput} onChange={(event) => setBatchMeterInput(event.target.value)} placeholder={"每行一个表号，也支持空格、逗号分隔\n例如：\n00430500003931\n00430500003932"}/><small>最多 500 个，重复表号会自动去除；导出的 Excel 会把表号保存为文本。</small><div className="batch-meter-stats"><strong>{batchMeterState.valid.length} 个有效</strong>{batchMeterState.invalid.length > 0 && <span className="invalid">{batchMeterState.invalid.length} 个格式错误</span>}{batchMeterState.duplicateCount > 0 && <span>{batchMeterState.duplicateCount} 个重复已忽略</span>}{batchMeterState.overflowCount > 0 && <span className="invalid">超出上限 {batchMeterState.overflowCount} 个</span>}</div>{batchMeterState.invalid.length > 0 && <code className="batch-invalid-list">错误：{batchMeterState.invalid.slice(0, 5).join("、")}{batchMeterState.invalid.length > 5 ? "…" : ""}</code>}</label>
@@ -813,7 +847,29 @@ export function ProtocolStudio() {
         </div>
       </section>}
 
-      {view === "records" && <section className="page collection-page"><div className="page-heading"><div><p className="eyebrow">LOCAL HISTORY</p><h1>本机解析记录</h1><span>最近 20 条成功解析，仅保存在当前浏览器。</span></div><div className="heading-actions"><button type="button" disabled={!records.length} onClick={clearRecords}>清空记录</button><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div></div>{records.length ? <div className="record-list">{records.map((record) => <article key={record.id}><div className="record-main"><span>{new Date(record.createdAt).toLocaleString("zh-CN", { hour12: false })}</span><h2>{record.protocol}</h2><p>表号 {record.meterNo} · {record.coreValue}</p></div><code>{record.raw}</code><div><button type="button" onClick={() => copyText(record.raw, "历史报文")}>复制</button><button className="primary-link" type="button" onClick={() => reuseRecord(record)}>重新解析</button></div></article>)}</div> : <div className="large-empty"><span>↺</span><h2>还没有解析记录</h2><p>完成一次报文解析后，它会自动出现在这里。</p><button className="primary-link" type="button" onClick={() => setView("samples")}>使用样例开始</button></div>}</section>}
+      {view === "records" && <section className="page collection-page records-page">
+        <div className="page-heading"><div><p className="eyebrow">LOCAL HISTORY</p><h1>解析记录</h1><span>共 {records.length} 条 · 仅保存在当前浏览器，最多保留最近 20 条</span></div><div className="heading-actions"><button className="records-clear" type="button" disabled={!records.length} onClick={clearRecords}>清空记录</button><button className="primary-link" type="button" onClick={() => setView("studio")}>返回工作台</button></div></div>
+        {records.length ? <div className="records-panel">
+          <div className="records-toolbar">
+            <label className="records-search"><span>搜索记录</span><input type="search" value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} placeholder="搜索表号、协议或解析结果"/></label>
+            <label className="records-filter"><span>协议筛选</span><select value={recordProtocol} onChange={(event) => setRecordProtocol(event.target.value)}><option value="">全部协议</option>{recordProtocols.map((protocol) => <option value={protocol} key={protocol}>{protocol}</option>)}</select></label>
+            <span className="records-count" role="status">{visibleRecords.length} 条记录 · 时间倒序</span>
+          </div>
+          {visibleRecords.length ? <table className="records-table"><thead><tr><th scope="col">解析时间</th><th scope="col">表号</th><th scope="col">协议 / 报文类型</th><th scope="col">解析结果</th><th scope="col">操作</th></tr></thead><tbody>{visibleRecords.map((record) => {
+            const expanded = expandedRecordId === record.id;
+            const date = new Date(record.createdAt);
+            const byteCount = record.raw.replace(/\s/g, "").length / 2;
+            return <Fragment key={record.id}><tr className={expanded ? "record-expanded" : ""}>
+              <td data-label="解析时间"><time dateTime={record.createdAt}><span>{date.toLocaleDateString("zh-CN")}</span><strong>{date.toLocaleTimeString("zh-CN", { hour12: false })}</strong></time></td>
+              <td data-label="表号" className="record-meter">{record.meterNo || "—"}</td>
+              <td data-label="协议 / 报文类型" className="record-protocol">{record.protocol}</td>
+              <td data-label="解析结果" className="record-value">{record.coreValue || "—"}</td>
+              <td className="record-actions"><div><button type="button" aria-expanded={expanded} aria-controls={`record-hex-${record.id}`} onClick={() => setExpandedRecordId(expanded ? null : record.id)}>{expanded ? "收起" : "查看"}</button><button type="button" onClick={() => reuseRecord(record)}>重新解析</button><button className="record-delete" type="button" aria-label={`删除表号 ${record.meterNo} 的这条记录`} onClick={() => deleteRecord(record.id)}>删除</button></div></td>
+            </tr>{expanded && <tr className="record-detail-row"><td colSpan={5}><section className="record-hex" id={`record-hex-${record.id}`} aria-label="原始报文"><header><strong>原始报文</strong><span>{byteCount} Bytes</span><button type="button" onClick={() => copyText(record.raw, "历史报文")}>复制 HEX</button></header><code>{record.raw}</code></section></td></tr>}</Fragment>;
+          })}</tbody></table> : <div className="records-no-results"><strong>没有找到匹配记录</strong><p>试试其他表号或协议名称。</p><button type="button" onClick={() => { setRecordSearch(""); setRecordProtocol(""); }}>重置筛选</button></div>}
+          <footer className="records-footer">记录时间为本机解析时间，原始报文可展开查看与复制。</footer>
+        </div> : <div className="large-empty"><span><NavIcon name="history"/></span><h2>还没有解析记录</h2><p>完成一次报文解析后，它会自动出现在这里。</p><button className="primary-link" type="button" onClick={() => setView("samples")}>使用样例开始</button></div>}
+      </section>}
     </div>
 
     {/* 手机端使用固定底部导航，避免侧栏隐藏后协议中心和记录失去入口。 */}

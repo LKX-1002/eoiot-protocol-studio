@@ -1,3 +1,68 @@
+/* 解析记录：紧凑表格与按需展开的原始报文。 */
+.records-panel { max-width: 1720px; margin: 0 auto; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.records-toolbar { display: flex; align-items: flex-end; gap: 16px; padding: 20px; }
+.records-toolbar label { display: grid; gap: 7px; min-width: 0; }
+.records-toolbar label > span { color: var(--muted); font-size: 12px; }
+.records-search { flex: 1; max-width: 380px; }
+.records-filter { width: 300px; }
+.records-toolbar input, .records-toolbar select { width: 100%; min-width: 0; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--ink); font: inherit; font-size: 14px; }
+.records-toolbar input::placeholder { color: var(--muted); }
+.records-count { margin-left: auto; padding-bottom: 10px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.records-table { table-layout: fixed; font-size: 14px; }
+.records-table th { padding: 12px 20px; background: var(--panel-soft); border-top: 1px solid var(--line); font-size: 12px; }
+.records-table th:nth-child(1) { width: 15%; }
+.records-table th:nth-child(2) { width: 19%; }
+.records-table th:nth-child(3) { width: 30%; }
+.records-table th:nth-child(4) { width: 17%; }
+.records-table th:nth-child(5) { width: 19%; }
+.records-table td { padding: 14px 20px; vertical-align: middle; overflow-wrap: anywhere; }
+.records-table tbody > tr:not(.record-detail-row):hover, .records-table .record-expanded { background: color-mix(in srgb, var(--brand-soft) 35%, var(--panel)); }
+.records-table time { display: grid; font-variant-numeric: tabular-nums; }
+.records-table time span { color: var(--muted); font-size: 12px; }
+.records-table time strong { color: var(--ink); font-size: 14px; font-weight: 400; }
+.record-meter { font-variant-numeric: tabular-nums; font-weight: 600; }
+.record-protocol { line-height: 1.6; }
+.record-value { color: var(--brand); font-weight: 600; font-variant-numeric: tabular-nums; }
+.record-actions > div { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }
+.records-panel button { min-height: 36px; padding: 4px 0; border: 0; background: transparent; color: var(--brand); font-size: 13px; cursor: pointer; }
+.records-panel button:hover { text-decoration: underline; }
+.records-panel .record-delete { color: var(--muted); }
+.records-panel .record-delete:hover, .records-page .records-clear:hover { color: var(--danger); }
+.records-table .record-detail-row > td { padding: 0 20px 18px; border-top: 0; background: color-mix(in srgb, var(--brand-soft) 35%, var(--panel)); }
+.record-hex { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--editor); }
+.record-hex header { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.record-hex header strong { font-size: 13px; }
+.record-hex header span { color: var(--muted); font-size: 12px; }
+.record-hex header button { margin-left: auto; }
+.records-table .record-hex code { display: block; padding: 16px; color: var(--editor-ink); font: 13px/1.9 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.records-footer { padding: 13px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.records-no-results { padding: 60px 20px; text-align: center; border-top: 1px solid var(--line); }
+.records-no-results strong { font-size: 16px; }
+.records-no-results p { color: var(--muted); font-size: 14px; }
+.records-page .large-empty svg { width: 32px; height: 32px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.records-page button:focus-visible, .records-toolbar input:focus-visible, .records-toolbar select:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+@media (max-width: 1200px) {
+  .records-table th, .records-table td { padding-left: 12px; padding-right: 12px; }
+  .records-filter { width: 240px; }
+  .record-actions > div { gap: 0 8px; }
+}
+@media (max-width: 900px) {
+  .records-toolbar { flex-wrap: wrap; padding: 16px; }
+  .records-search { max-width: none; flex: 1 1 200px; }
+  .records-filter { flex: 1 1 200px; width: auto; }
+  .records-count { width: 100%; margin: 0; padding: 0; }
+  .records-table, .records-table tbody, .records-table tr, .records-table td { display: block; width: 100%; }
+  .records-table thead { display: none; }
+  .records-table tbody > tr:not(.record-detail-row) { padding: 14px 16px; border-top: 1px solid var(--line); }
+  .records-table td { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; border: 0; text-align: right; }
+  .records-table td[data-label]::before { content: attr(data-label); flex: 0 0 105px; color: var(--muted); font-size: 12px; text-align: left; font-weight: 400; }
+  .records-table time { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; gap: 8px; }
+  .records-table .record-actions { justify-content: flex-end; padding-top: 8px; }
+  .record-actions > div { gap: 16px; }
+  .records-table .record-detail-row > td { display: block; padding: 0 16px 16px; text-align: left; }
+  .records-footer { padding: 13px 16px; }
+}
+
 /* 全局盒模型与原生控件基础行为。 */
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
