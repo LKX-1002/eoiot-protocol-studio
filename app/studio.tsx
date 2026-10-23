@@ -102,6 +102,7 @@ const tabs: Array<{ id: TabId; label: string }> = [
 ];
 
 const parserCapabilities: Record<string, string[]> = {
+  "dlt645-energy": ["累计电量", "尖峰平谷", "组合 / 正向有功", "减 33H 与 BCD 解码", "费率合计核对", "CS 校验"],
   "joymeter-command": ["A184 写服务器", "A171 写基表读数", "A017 开关阀", "A180–A183 上报参数", "24H 下行 / A4H 应答", "字段反向解析"],
   "wotman-command": ["8110 写通信参数", "A016 写机电同步", "A017 阀门控制", "8104 上传时间", "8105 采集间隔", "字段反向解析"],
   "joymeter-mbus": ["901F 抄表请求/应答", "当前与结算累计量", "两字节状态字", "阀门与 12 项告警", "CS 校验"],
@@ -110,6 +111,7 @@ const parserCapabilities: Record<string, string[]> = {
 };
 
 const protocolCenterMeta: Record<string, { vendor: string; product: string; short: string }> = {
+  "dlt645-energy": { vendor: "DL/T 645", product: "单费率 / 多费率电表", short: "电表" },
   "joymeter-command": { vendor: "Joymeter", product: "4G 水表写入指令", short: "4G 写入" },
   "joymeter-mbus": { vendor: "Joymeter", product: "MBus 小口径水表", short: "MBus" },
   "cjt188-small": { vendor: "Joymeter", product: "4G 小口径水表", short: "4G 水表" },
@@ -117,7 +119,7 @@ const protocolCenterMeta: Record<string, { vendor: string; product: string; shor
   "wotman-big": { vendor: "沃特曼", product: "大口径水表上报协议", short: "大口径水表" },
 };
 
-const protocolCenterVendors = ["Joymeter", "沃特曼"];
+const protocolCenterVendors = ["Joymeter", "沃特曼", "DL/T 645"];
 
 function formatMetric(value: string | number | null, unit?: string) {
   if (value === null || value === "—") return "—";
@@ -231,6 +233,24 @@ function ByteMap({ result, selectedField, onSelect }: { result: ParseResult; sel
   </div>;
 }
 
+function ElectricReadings({ result }: { result: ParseResult }) {
+  const hasRates = typeof result.metrics.tipEnergy === "number";
+  const difference = Number(result.metrics.tariffDifference ?? 0);
+  const energy = (value: string | number | null | undefined) => typeof value === "number" ? value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
+  return <section className="electric-readings" aria-label="电表读数">
+    <header className="electric-section-heading"><h3>{hasRates ? "分费率电量" : "累计电量解析"}</h3><span className="electric-check"><ToolIcon name="check"/>帧校验通过</span></header>
+    {!hasRates && <p className="electric-overview-note">{result.controlCode === "11H" ? "读数据请求，等待电表应答。" : "累计用量已在顶部显示；本帧未包含分费率数据。"}</p>}
+    {hasRates && <><dl className="electric-rates">{[["尖", "tipEnergy"], ["峰", "peakEnergy"], ["平", "flatEnergy"], ["谷", "valleyEnergy"]].map(([label, key]) => <div key={key} className={`tariff-${key}`}><dt><i aria-hidden="true"/>{label}电量</dt><dd><strong>{energy(result.metrics[key])}</strong><span>kWh</span></dd></div>)}</dl>
+      <div className={`electric-reconciliation${difference !== 0 ? " has-difference" : ""}`}><span>费率合计 <strong>{energy(result.metrics.tariffSum)} kWh</strong></span><span>{difference === 0 ? "与累计用量一致" : <>与累计量差值 <strong>{difference > 0 ? "+" : ""}{energy(difference)} kWh</strong></>}</span></div>
+      {difference !== 0 && <p className="electric-difference-note">帧校验已通过。累计用量与四费率合计存在差值，请核对表内费率配置。</p>}
+    </>}
+  </section>;
+}
+
+function ElectricReportDetails({ result }: { result: ParseResult }) {
+  return <div className="electric-report-overview"><p className="electric-overview-note">{typeof result.metrics.tipEnergy === "number" ? "费率 1–4 按既有电表配置对应尖、峰、平、谷；其他型号请核对费率配置。" : result.controlCode === "11H" ? "当前为抄读请求帧，电量将在电表应答帧中返回。" : "当前报文仅返回累计电量。"}</p><details open className="electric-report-details" key={`${result.meterNo}-${result.dataIdentifier}-${result.rawBytes.length}`}><summary>报文信息<span>{result.rawBytes.length} Bytes · DI {result.dataIdentifier}</span></summary><dl>{[["协议", "DL/T 645-2007"], ["数据标识 DI", result.dataIdentifier], ["控制码", result.controlCode], ["数据域长度", `${result.dataLength} Bytes`], ["帧长度", `${result.rawBytes.length} Bytes`], ["已识别字段", `${result.fields.length} 项`], ["报文用途", result.controlCode === "11H" ? "读数据请求" : "读数据应答"], ["校验和 CS", hex([result.rawBytes[result.rawBytes.length - 2]])]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details></div>;
+}
+
 export function ProtocolStudio() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [view, setView] = useState<AppView>("studio");
@@ -251,6 +271,9 @@ export function ProtocolStudio() {
   const [uploadSchedule, setUploadSchedule] = useState<Array<[string, string]>>(() => Array.from({ length: 24 }, () => ["0", "30"]));
   const [intervalCommandInput, setIntervalCommandInput] = useState({ meterAddress: "00430500003931", intervalMinutes: "60" });
   const [result, setResult] = useState<ParseResult | null>(initialResult);
+  const electricResult = result?.protocolId === "dlt645-energy";
+  const coreReadout = result?.coreValue.match(/^([\d,.]+)\s+(kWh|m³)$/);
+  const resultTabs = electricResult ? tabs.filter((tab) => tab.id !== "history") : tabs;
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [selectedField, setSelectedField] = useState<ParsedField | null>(null);
   const [records, setRecords] = useState<ParseRecord[]>([]);
@@ -662,7 +685,7 @@ export function ProtocolStudio() {
           <section className="panel input-panel">
             <div className="panel-title"><div><span className="step">01</span><strong>输入原始帧</strong></div><span className="byte-count">{inputState.count} Bytes</span></div>
             <div className="input-body">
-              <div className="auto-recognition"><ToolIcon name="format"/><div><strong>协议与端序自动识别</strong><p>支持 Joymeter 4G、Joymeter MBus 和沃特曼大口径报文，无需手动选择。</p></div></div>
+              <div className="auto-recognition"><ToolIcon name="format"/><div><strong>协议与端序自动识别</strong><p>支持 Joymeter、沃特曼水表及 DL/T 645 单费率、多费率电表报文。</p></div></div>
               <div className={`hex-editor${!inputState.valid ? " has-error" : ""}`}>
                 <div className="editor-toolbar"><span className="editor-label"><ToolIcon name="code"/>HEX / RAW FRAME</span><div className="tool-actions"><button className={actionFeedback === "paste" ? "is-success" : ""} type="button" onClick={pasteFrame}>{actionFeedback === "paste" ? <ToolIcon name="check"/> : <ToolIcon name="paste"/>}<span>{actionFeedback === "paste" ? "已粘贴" : "粘贴"}</span></button><button className={actionFeedback === "format" ? "is-success" : ""} type="button" onClick={formatInput}>{actionFeedback === "format" ? <ToolIcon name="check"/> : <ToolIcon name="format"/>}<span>{actionFeedback === "format" ? "已格式化" : "格式化"}</span></button><button className={actionFeedback === "clear" ? "is-success" : ""} type="button" onClick={clearFrame}>{actionFeedback === "clear" ? <ToolIcon name="check"/> : <ToolIcon name="clear"/>}<span>{actionFeedback === "clear" ? "已清空" : "清空"}</span></button></div></div>
                 <div className="editor-main"><textarea ref={rawInputRef} value={rawInput} onChange={(event) => { setRawInput(event.target.value); setError(""); setResult(null); setSelectedField(null); setMessage("报文已修改，等待重新解析"); }} wrap="soft" spellCheck={false} aria-label="原始十六进制报文" placeholder="粘贴 HEX 报文，支持空格、换行、逗号和 0x 前缀"/></div>
@@ -677,16 +700,16 @@ export function ProtocolStudio() {
             <div className="panel-title"><div><span className="step">02</span><strong>解析结果</strong></div><span className="result-state"><i/> {message}</span></div>
             {result ? <>
               <div className="result-hero"><div className="protocol-identity"><span className="success-mark">✓</span><div><p>识别到协议</p><h2>{result.protocol}</h2><span>{result.manufacturer} · {result.categoryLabel}</span></div></div><div className="confidence"><span>匹配度</span><strong>{result.confidence}%</strong></div></div>
-              <div className="primary-metrics"><div><span>核心读数</span><strong>{result.coreValue}</strong></div><div><span>表号</span><strong>{result.meterNo}</strong></div><div><span>数据标识 DI</span><strong>{result.dataIdentifier}</strong></div><div><span>控制码</span><strong>{result.controlCode}</strong></div></div>
-              <div className="tabs" role="tablist" aria-label="解析结果视图">{tabs.map((tab, index) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} tabIndex={activeTab === tab.id ? 0 : -1} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => {
+              <section className="reading-summary" aria-label="核心读数与设备信息"><div className="reading-summary-value"><span>{electricResult ? "累计用量" : coreReadout ? "当前累计量" : "报文内容"}</span><strong>{coreReadout ? <><span className="reading-number">{coreReadout[1]}</span><span className="reading-unit">{coreReadout[2]}</span></> : result.coreValue}</strong></div><dl className="reading-summary-meta"><div className="reading-meter"><dt>表号</dt><dd>{result.meterNo}</dd></div><div><dt>数据标识</dt><dd>{result.dataIdentifier}</dd></div><div><dt>控制码</dt><dd>{result.controlCode}</dd></div></dl></section>
+              <div className="tabs" role="tablist" aria-label="解析结果视图">{resultTabs.map((tab, index) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} tabIndex={activeTab === tab.id ? 0 : -1} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => {
                 if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") return;
                 event.preventDefault();
-                const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-                setActiveTab(tabs[nextIndex].id);
+                const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? resultTabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + resultTabs.length) % resultTabs.length;
+                setActiveTab(resultTabs[nextIndex].id);
                 (event.currentTarget.parentElement?.children[nextIndex] as HTMLButtonElement | undefined)?.focus();
               }}>{tab.label}{tab.id === "history" && result.history.length > 0 && <em>{result.history.length}</em>}{tab.id === "diagnostics" && <em>{result.diagnostics.length}</em>}</button>)}</div>
               <div className="tab-content">
-                {activeTab === "overview" && <>
+                {activeTab === "overview" && (electricResult ? <><ElectricReadings result={result}/><ElectricReportDetails result={result}/></> : <>
                   {analysis && result.protocolId !== "wotman-command" && <section className={`analysis-card analysis-${analysis.level}`} aria-label="分析结论">
                     <header><div><span className="analysis-icon">{analysis.level === "normal" ? "✓" : analysis.level === "abnormal" ? "×" : "!"}</span><strong>{analysis.title}</strong></div><span className="analysis-status">{analysis.statusLabel}</span></header>
                     <div className="analysis-body">
@@ -697,9 +720,9 @@ export function ProtocolStudio() {
                   <div className="result-insights"><article><span>帧长度</span><strong>{result.rawBytes.length} Bytes</strong></article><article><span>已识别字段</span><strong>{result.fields.length} 项</strong></article><article><span>诊断状态</span><strong>{result.diagnostics.some((item) => item.level === "bad") ? "存在错误" : result.diagnostics.some((item) => item.level === "warn") ? "需要关注" : "全部通过"}</strong></article><article><span>历史记录</span><strong>{result.history.length} 条</strong></article></div>
                   <div className="overview-sections">{result.overviewSections.map((section) => {
                     const visibleItems = section.items.filter((item) => item.value !== null && item.value !== "—");
-                    return <section className={`overview-group overview-${section.id}`} data-count={visibleItems.length} key={section.id}><h3><span>{section.title}</span><em>{visibleItems.length} 项</em></h3><div className="metric-grid">{visibleItems.map((item) => <article key={item.key}><span>{item.label}</span><strong>{formatMetric(item.value, item.unit)}</strong>{item.note && <small>{item.note}</small>}</article>)}</div></section>;
+                    return <section className={`overview-group overview-${section.id}`} data-count={visibleItems.length} key={section.id}><h3><span>{section.title}</span><em>{visibleItems.length} 项</em></h3><div className="metric-grid">{visibleItems.map((item) => <article key={item.key} data-metric={item.key}><span>{item.label}</span><strong>{formatMetric(item.value, item.unit)}</strong>{item.note && <small>{item.note}</small>}</article>)}</div></section>;
                   })}</div>
-                </>}
+                </>)}
                 {activeTab === "fields" && <FieldExplanation result={result} selectedField={selectedField} onSelect={setSelectedField}/>}
                 {activeTab === "bytes" && <ByteMap result={result} selectedField={selectedField} onSelect={setSelectedField}/>} 
                 {activeTab === "history" && (result.history.length ? <div className="table-scroll"><table><thead><tr><th>采集时间</th><th>正向累计</th><th>反向累计</th><th>瞬时流量</th><th>压力</th></tr></thead><tbody>{result.history.map((item, index) => <tr key={`${item.collectTime}-${index}`}><td>{item.collectTime}</td><td>{item.forwardFlow ?? "—"}</td><td>{item.reverseFlow ?? "—"}</td><td>{item.instantFlow ?? "—"}</td><td>{item.pressure ?? "—"}</td></tr>)}</tbody></table></div> : <div className="empty-tab"><span>↺</span><strong>这条报文没有历史数据</strong><p>可在样例库载入沃特曼 9021 报文体验历史数据解析。</p></div>)}
@@ -833,7 +856,7 @@ export function ProtocolStudio() {
 
           {view === "library" ? activeProtocol && <article className="protocol-center-detail">
             <header className="protocol-detail-hero"><div><span>{protocolCenterMeta[activeProtocol.id]?.vendor}</span><h2>{activeProtocol.name}</h2><code>{activeProtocol.id}</code></div><strong className="protocol-ready"><i/>可用</strong></header>
-            <div className="protocol-detail-stats"><div><span>产品方向</span><strong>{protocolCenterMeta[activeProtocol.id]?.product}</strong></div><div><span>协议分类</span><strong>{activeProtocol.category === "water" ? "水务计量" : activeProtocol.category}</strong></div><div><span>已接入能力</span><strong>{parserCapabilities[activeProtocol.id]?.length ?? 0} 项</strong></div><div><span>关联样例</span><strong>{sampleList.filter((sample) => sample.protocolId === activeProtocol.id).length} 条</strong></div></div>
+            <div className="protocol-detail-stats"><div><span>产品方向</span><strong>{protocolCenterMeta[activeProtocol.id]?.product}</strong></div><div><span>协议分类</span><strong>{activeProtocol.category === "water" ? "水务计量" : activeProtocol.category === "electric" ? "电能计量" : "网关"}</strong></div><div><span>已接入能力</span><strong>{parserCapabilities[activeProtocol.id]?.length ?? 0} 项</strong></div><div><span>关联样例</span><strong>{sampleList.filter((sample) => sample.protocolId === activeProtocol.id).length} 条</strong></div></div>
             <section className="protocol-capabilities"><header><div><strong>支持能力</strong><span>自动识别与字段解析范围</span></div></header><ul>{parserCapabilities[activeProtocol.id]?.map((item) => <li key={item}><span>✓</span><strong>{item}</strong></li>)}</ul></section>
             <section className="protocol-related-samples"><header><div><strong>关联样例</strong><span>使用真实格式验证解析链路</span></div><button type="button" onClick={() => { const firstSample = sampleList.find((sample) => sample.protocolId === activeProtocol.id); if (firstSample) setSelectedSampleId(firstSample.id); setView("samples"); }}>查看全部样例</button></header>{sampleList.filter((sample) => sample.protocolId === activeProtocol.id).length ? <div>{sampleList.filter((sample) => sample.protocolId === activeProtocol.id).slice(0, 3).map((sample) => <button type="button" key={sample.id} onClick={() => { setSelectedSampleId(sample.id); setView("samples"); }}><span><strong>{sample.name}</strong><small>{sample.description}</small></span><em>{parseHex(sample.value).length} Bytes</em></button>)}</div> : <p>当前协议暂无内置样例，可直接进入自动解析。</p>}</section>
             <footer className="protocol-detail-actions"><button type="button" onClick={() => setView("studio")}>进入自动解析</button></footer>

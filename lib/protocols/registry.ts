@@ -4,9 +4,10 @@ import { wotmanParser } from "./wotman";
 import { wotmanCommandParser } from "./wotman-command-parser";
 import { joymeterCommandParser } from "./joymeter-command-parser";
 import { joymeterMbusParser } from "./joymeter-mbus";
+import { dlt645Parser } from "./dlt645";
 
 /** 所有可用协议解析器的唯一注册入口。 */
-export const parsers: ProtocolParser[] = [joymeterCommandParser, wotmanCommandParser, joymeterMbusParser, cjt188Parser, wotmanParser];
+export const parsers: ProtocolParser[] = [dlt645Parser, joymeterCommandParser, wotmanCommandParser, joymeterMbusParser, cjt188Parser, wotmanParser];
 
 /**
  * 选择解析器并执行协议级硬校验。

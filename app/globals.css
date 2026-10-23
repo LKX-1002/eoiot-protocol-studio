@@ -1,3 +1,72 @@
+/* 电表结果采用读数优先布局，技术字段按需展开。 */
+.electric-readings { padding: 0 0 20px; }
+.electric-section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.electric-section-heading h3 { margin: 0; color: var(--ink); font-size: 14px; font-weight: 600; }
+.electric-primary-metrics > div:first-child { background: var(--brand-soft); box-shadow: inset 3px 0 var(--brand); }
+.electric-rates .tariff-tipEnergy { --tariff-color: var(--tariff-tip); }
+.electric-rates .tariff-peakEnergy { --tariff-color: var(--tariff-peak); }
+.electric-rates .tariff-flatEnergy { --tariff-color: var(--tariff-flat); }
+.electric-rates .tariff-valleyEnergy { --tariff-color: var(--tariff-valley); }
+.electric-rates > div[class] { padding: 12px; border: 1px solid var(--line); border-top: 3px solid var(--tariff-color); border-radius: 8px; background: color-mix(in srgb, var(--tariff-color) 5%, var(--panel)); }
+.electric-rates > div[class] dt { display: flex; align-items: center; gap: 6px; color: var(--ink); }
+.electric-rates dt i { width: 6px; height: 6px; border-radius: 50%; background: var(--tariff-color); }
+.electric-rates > div[class] dd strong { color: var(--tariff-color); }
+.electric-readings .electric-rates { padding: 0; gap: 10px; border: 0; }
+.electric-readings + .electric-report-overview { padding-top: 4px; }
+.metric-grid article[data-metric="currentFlow"] strong, .metric-grid article[data-metric="forwardFlow"] strong { color: var(--brand); }
+.metric-grid article[data-metric="settlementFlow"] strong { color: var(--blue); }
+.metric-grid article[data-metric="reverseFlow"] strong { color: var(--tariff-tip); }
+.electric-identity { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.electric-identity h2 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 500; }
+.electric-identity h2 > span { margin-left: 8px; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.electric-identity p { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+.electric-check { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; color: var(--brand); font-size: 12px; line-height: 24px; }
+.electric-check svg { width: 15px; height: 15px; }
+.electric-total { padding: 28px 0 24px; }
+.electric-total > span { color: var(--muted); font-size: 14px; }
+.electric-total > p { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 0; }
+.electric-total strong { color: var(--ink); font-size: 40px; line-height: 1.25; font-weight: 600; letter-spacing: -1px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.electric-total p > span { color: var(--muted); font-size: 16px; }
+.electric-total .electric-request { font-size: 16px; color: var(--muted); }
+.electric-rates { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 0; padding: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.electric-rates > div { min-width: 0; padding: 0 16px; border-left: 1px solid var(--line); }
+.electric-rates > div:first-child { padding-left: 0; border-left: 0; }
+.electric-rates > div:last-child { padding-right: 0; }
+.electric-rates dt { color: var(--muted); font-size: 13px; }
+.electric-rates dd { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 6px; margin: 8px 0 0; }
+.electric-rates dd strong { color: var(--ink); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.electric-rates dd span { color: var(--muted); font-size: 12px; }
+.electric-reconciliation { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding-top: 16px; color: var(--muted); font-size: 13px; }
+.electric-reconciliation strong { margin-left: 6px; color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+.electric-reconciliation > span:last-child { color: var(--brand); }
+.electric-reconciliation.has-difference > span:last-child, .electric-reconciliation.has-difference > span:last-child strong { color: var(--warning); }
+.electric-difference-note { margin: 12px 0 0; padding: 10px 12px; border-radius: 6px; background: var(--warning-soft); color: var(--warning); font-size: 12px; line-height: 1.7; }
+.electric-overview-note { margin: 0 0 18px; color: var(--muted); font-size: 13px; line-height: 1.8; }
+.electric-report-details { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.electric-report-details summary { padding: 14px 16px; color: var(--ink); font-size: 14px; cursor: pointer; }
+.electric-report-details summary > span { float: right; margin-left: 12px; color: var(--muted); font-size: 12px; }
+.electric-report-details summary:hover { background: var(--panel-soft); }
+.electric-report-details summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+.electric-report-details dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px; margin: 0; padding: 18px 16px; border-top: 1px solid var(--line); }
+.electric-report-details dt { color: var(--muted); font-size: 12px; }
+.electric-report-details dd { margin: 5px 0 0; color: var(--ink); font-size: 14px; overflow-wrap: anywhere; }
+@media (max-width: 1100px) {
+  .electric-readings { padding: 0 0 18px; }
+  .electric-identity { flex-wrap: wrap; gap: 10px; }
+  .electric-rates > div { padding: 0 10px; }
+  .electric-rates dd strong { font-size: 18px; }
+}
+@media (max-width: 480px) {
+  .electric-readings { padding: 0 0 16px; }
+  .electric-total { padding: 22px 0; }
+  .electric-total strong { font-size: 34px; }
+  .electric-rates { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 18px; }
+  .electric-rates > div:nth-child(3) { border-left: 0; padding-left: 0; }
+  .electric-rates > div:nth-child(even) { padding-right: 0; }
+  .electric-report-details summary > span { display: block; float: none; margin: 5px 0 0; }
+  .electric-report-details dl { gap: 16px; }
+}
+
 /* 解析记录：紧凑表格与按需展开的原始报文。 */
 .records-panel { max-width: 1720px; margin: 0 auto; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .records-toolbar { display: flex; align-items: flex-end; gap: 16px; padding: 20px; }
@@ -87,20 +156,25 @@ body:has(.studio-app[data-theme="dark"]) { background: #0c1217; }
  * 组件只引用语义变量，切换主题时无需逐个覆盖选择器。
  */
 .studio-app {
-  --bg: #f3f6f8;
+  --bg: #f0f7f5;
   --shell: #ffffff;
   --sidebar: #ffffff;
-  --sidebar-active: #e5f5f2;
+  --sidebar-active: #e4f2ee;
   --panel: #ffffff;
   --panel-soft: #f6f9fa;
-  --ink: #17272d;
+  --ink: #3a3d3c;
   --muted: #6b7d83;
   --faint: #91a0a5;
   --line: #dfe7e9;
-  --brand: #087d72;
-  --brand-strong: #066b62;
+  --brand: #087c53;
+  --brand-strong: #066443;
+  --brand-button: #087c53;
   --brand-ink: #ffffff;
-  --brand-soft: #e2f4f0;
+  --brand-soft: #e4f2ee;
+  --tariff-tip: #7650a5;
+  --tariff-peak: #946018;
+  --tariff-flat: #356cb0;
+  --tariff-valley: #237d72;
   --logo-base: #e2f4f0;
   --logo-window: #087f75;
   --blue: #3974ad;
@@ -115,7 +189,7 @@ body:has(.studio-app[data-theme="dark"]) { background: #0c1217; }
   --editor-ink: #17333b;
   --editor-muted: #6f858b;
   --editor-accent: #087d72;
-  --shadow: 0 12px 36px rgba(29, 54, 62, .09);
+  --shadow: 0 6px 20px rgba(29, 54, 42, .045);
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
@@ -134,6 +208,11 @@ body:has(.studio-app[data-theme="dark"]) { background: #0c1217; }
   --faint: #6e8188;
   --line: #29343d;
   --brand: #3bc7b6;
+  --brand-button: #3bc7b6;
+  --tariff-tip: #c4a1f0;
+  --tariff-peak: #e6bb7a;
+  --tariff-flat: #91baf2;
+  --tariff-valley: #75d1bc;
   --brand-strong: #58d4c4;
   --brand-ink: #062925;
   --brand-soft: #123b38;
@@ -251,7 +330,7 @@ body:has(.studio-app[data-theme="dark"]) { background: #0c1217; }
 .editor-status .invalid { color: var(--danger); }
 .input-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 11px; }
 .parse-button, .sample-button { min-height: 39px; border-radius: 9px; padding: 0 13px; font-size: 11px; }
-.parse-button { border: 1px solid var(--brand); background: var(--brand); color: var(--brand-ink); font-weight: 500; box-shadow: 0 7px 18px color-mix(in srgb, var(--brand) 24%, transparent); }
+.parse-button { border: 1px solid var(--brand); background: var(--brand-button); color: var(--brand-ink); font-weight: 500; box-shadow: 0 3px 10px color-mix(in srgb, var(--brand) 14%, transparent); }
 .parse-button:hover { background: var(--brand-strong); }
 .sample-button { border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
 .sample-button:hover { background: var(--panel-soft); }

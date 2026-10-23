@@ -1,0 +1,132 @@
+/* B 配色的第二版：薄荷工作区、轻表面与共享的数据层级。 */
+.studio-app {
+  --panel-soft: #f7faf9; --line: #e2ebe7; --muted: #6d7c75; --faint: #84938c;
+  --editor: #f8fbfa; --editor-line: #dde8e2; --editor-ink: #283e34; --editor-accent: var(--brand);
+}
+.studio-app[data-theme="dark"] {
+  --panel-soft: #15231f; --line: #2a3d34; --muted: #a0b2a8; --faint: #859b8e;
+  --editor: #111c18; --editor-line: #2a3d34; --editor-ink: #d8e8de;
+}
+.studio-app .sidebar { background: color-mix(in srgb, var(--brand-soft) 26%, var(--shell)); }
+.studio-app .nav-item { border-radius: 7px; }
+.studio-app .nav-item.active { box-shadow: inset 2px 0 var(--brand); }
+.studio-app .topbar { box-shadow: none; }
+.studio-page { padding: 24px 28px 40px; }
+.studio-page .page-heading { max-width: 1600px; margin-bottom: 20px; align-items: center; }
+.studio-page .page-heading h1 { font-size: 25px; font-weight: 600; letter-spacing: -.4px; }
+.studio-page .page-heading > div > span { font-size: 13px; }
+.studio-page .heading-actions button { min-height: 40px; border-radius: 7px; font-size: 13px; box-shadow: none; }
+.studio-page .workbench { max-width: 1600px; grid-template-columns: minmax(320px, 37fr) minmax(0, 63fr); gap: 20px; }
+.studio-page .panel { border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 2px 8px rgb(25 60 42 / 2%); }
+.studio-page .panel-title { min-height: 52px; padding: 0 20px; border-bottom: 1px solid var(--line); }
+.studio-page .panel-title strong { font-size: 14px; }
+.studio-page .step { width: 24px; height: 24px; border-radius: 6px; font-size: 11px; }
+.studio-page .result-state { font-size: 11px; }
+.studio-page .input-body { padding: 20px; }
+.studio-page .auto-recognition { margin: 0 0 16px; gap: 8px; align-items: center; }
+.studio-page .auto-recognition strong { font-size: 13px; }
+.studio-page .auto-recognition p { display: none; }
+.studio-page .hex-editor { border-radius: 8px; }
+.studio-page .editor-toolbar { min-height: 42px; padding: 0 8px 0 12px; letter-spacing: .02em; }
+.studio-page .editor-label { font-size: 11px; }
+.studio-page .editor-toolbar .tool-actions { gap: 0; }
+.studio-page .editor-toolbar .tool-actions button { padding: 0 7px; font-size: 12px; }
+.studio-page .editor-main textarea { padding: 16px 14px; line-height: 1.95; }
+.studio-page .editor-status { background: var(--panel); font-size: 11px; }
+.studio-page .parse-button, .studio-page .sample-button { min-height: 42px; border-radius: 7px; box-shadow: none; font-size: 13px; }
+.studio-page .input-footnote { font-size: 11px; line-height: 1.8; }
+.studio-page .result-hero { padding: 18px 20px; align-items: center; }
+.studio-page .success-mark { width: 34px; height: 34px; border-radius: 9px; font-size: 18px; }
+.studio-page .protocol-identity { gap: 10px; min-width: 0; }
+.studio-page .protocol-identity h2 { font-size: 17px; font-weight: 600; }
+.studio-page .protocol-identity p { font-size: 11px; margin: 0 0 2px; }
+.studio-page .protocol-identity div > span { font-size: 11px; }
+.studio-page .confidence { flex-shrink: 0; }
+.studio-page .confidence span { font-size: 11px; }
+.studio-page .confidence strong { font-size: 18px; font-weight: 500; }
+.reading-summary { margin: 0 20px 12px; padding: 18px 0 20px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, .9fr); align-items: center; gap: 24px; border-top: 1px solid var(--line); }
+.reading-summary-value { min-width: 0; }
+.reading-summary-value > span { display: block; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+.reading-summary-value > strong { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; color: var(--brand); font-size: 25px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.reading-summary-value .reading-number { color: var(--brand); font-size: 34px; font-weight: 600; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
+.reading-summary-value .reading-unit { color: var(--muted); font-size: 13px; font-weight: 400; }
+.reading-summary-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin: 0; padding-left: 24px; border-left: 1px solid var(--line); }
+.reading-summary-meta > div { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.reading-summary-meta .reading-meter { grid-column: 1 / -1; }
+.reading-summary-meta dt { flex-shrink: 0; color: var(--muted); font-size: 12px; }
+.reading-summary-meta dd { margin: 0; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.reading-summary-meta .reading-meter dd { font-size: 15px; font-weight: 500; }
+.studio-page .tabs { padding: 0 20px; gap: 20px; border-bottom: 1px solid var(--line); }
+.studio-page .tabs button { padding: 0 1px; min-height: 43px; font-size: 13px; }
+.studio-page .tabs button.active { font-weight: 600; }
+.studio-page .tab-content { padding: 20px; }
+.studio-page .electric-readings { padding-bottom: 18px; }
+.studio-page .electric-section-heading { margin-bottom: 12px; }
+.studio-page .electric-section-heading h3 { font-size: 14px; }
+.studio-page .electric-check { font-size: 11px; }
+.studio-page .electric-rates { gap: 0; padding: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.studio-page .electric-rates > div[class] { padding: 0 18px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: transparent; }
+.studio-page .electric-rates > div[class]:first-child { padding-left: 0; border-left: 0; }
+.studio-page .electric-rates > div[class]:last-child { padding-right: 0; }
+.studio-page .electric-rates > div[class] dt { font-size: 12px; color: var(--muted); }
+.studio-page .electric-rates dt i { width: 7px; height: 7px; }
+.studio-page .electric-rates dd { gap: 4px; margin-top: 9px; }
+.studio-page .electric-rates > div[class] dd strong { color: var(--tariff-color); font-size: 23px; font-weight: 600; letter-spacing: -.35px; }
+.studio-page .electric-rates dd span { font-size: 11px; }
+.studio-page .electric-reconciliation { padding: 12px 0 0; font-size: 12px; }
+.studio-page .electric-difference-note { margin-top: 10px; padding: 9px 12px; border-left: 2px solid var(--warning); border-radius: 4px; font-size: 12px; }
+.studio-page .electric-overview-note { margin-bottom: 14px; font-size: 12px; }
+.studio-page .electric-report-details { border-radius: 8px; }
+.studio-page .electric-report-details summary { padding: 12px 14px; font-size: 13px; }
+.studio-page .electric-report-details summary > span { display: none; }
+.studio-page .electric-report-details dl { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px 14px; padding: 16px 14px; }
+.studio-page .electric-report-details dt { font-size: 11px; }
+.studio-page .electric-report-details dd { font-size: 13px; font-variant-numeric: tabular-nums; }
+.studio-page .analysis-card { border-top: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.studio-page .analysis-card > header { min-height: 40px; background: var(--panel-soft); }
+.studio-page .analysis-summary-grid { background: var(--panel); }
+.studio-page .analysis-item { padding: 12px; }
+.studio-page .analysis-advice { color: var(--muted); font-size: 12px; }
+.studio-page .result-insights { border-radius: 7px; background: var(--panel-soft); }
+.studio-page .overview-group h3 { font-size: 13px; }
+.studio-page .field-table th { background: var(--panel-soft); font-size: 12px; }
+.studio-page .field-table td { font-size: 13px; }
+.studio-page button:focus-visible, .studio-page summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+@media (max-width: 1280px) {
+  .studio-page { padding: 22px; }
+  .studio-page .workbench { grid-template-columns: minmax(280px, 36fr) minmax(0, 64fr); gap: 16px; }
+  .reading-summary { grid-template-columns: 1fr; gap: 16px; }
+  .reading-summary-meta { padding: 0; border-left: 0; grid-template-columns: 1.4fr 1fr 1fr; gap: 12px; }
+  .reading-summary-meta .reading-meter { grid-column: auto; }
+  .reading-summary-meta > div { flex-wrap: wrap; gap: 4px 8px; }
+  .studio-page .electric-rates > div[class] { padding: 0 10px; }
+  .studio-page .electric-rates > div[class] dd strong { font-size: 18px; }
+  .studio-page .electric-report-details dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .studio-page .editor-label { display: none; }
+}
+@media (max-width: 1000px) {
+  .studio-page .workbench { grid-template-columns: 1fr; }
+  .studio-page .editor-label { display: inline-flex; }
+}
+@media (max-width: 760px) {
+  .studio-page { padding: 18px 12px 28px; }
+  .studio-page .page-heading { align-items: flex-start; gap: 12px; }
+  .studio-page .page-heading h1 { font-size: 23px; }
+  .studio-page .result-hero { display: flex; flex-wrap: wrap; padding: 16px; }
+  .studio-page .confidence { margin-left: auto; }
+  .studio-page .panel-title, .studio-page .tabs { padding-left: 16px; padding-right: 16px; }
+  .studio-page .input-body, .studio-page .tab-content { padding: 16px; }
+  .reading-summary { margin-left: 16px; margin-right: 16px; }
+  .studio-page .tabs { gap: 18px; }
+  .studio-page .tabs button { flex-shrink: 0; }
+}
+@media (max-width: 480px) {
+  .studio-page .electric-rates { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 0; }
+  .studio-page .electric-rates > div[class] { padding: 0 14px; }
+  .studio-page .electric-rates > div[class]:nth-child(odd) { border-left: 0; padding-left: 0; }
+  .studio-page .electric-rates > div[class] dd strong { font-size: 22px; }
+  .reading-summary-value .reading-number { font-size: 30px; }
+  .reading-summary-meta { grid-template-columns: 1fr 1fr; }
+  .reading-summary-meta .reading-meter { grid-column: 1 / -1; }
+  .studio-page .editor-label { display: none; }
+}

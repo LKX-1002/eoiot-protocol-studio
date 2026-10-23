@@ -153,6 +153,21 @@ function buildCommandSummary(result: ParseResult): AnalysisSummary {
 
 /** 协议分发入口；每种协议维护独立规则，避免前端混用字段。 */
 export function buildAnalysisSummary(result: ParseResult): AnalysisSummary {
+  if (result.protocolId === "dlt645-energy") {
+    const total = result.metrics.totalEnergy;
+    const hasRates = typeof result.metrics.tipEnergy === "number";
+    const warning = result.diagnostics.some((item) => item.level === "warn");
+    return {
+      title: "电量解析", level: warning ? "attention" : "normal", statusLabel: warning ? "需复核" : "校验通过",
+      items: [
+        { key: "cumulative", label: "累计用量", value: typeof total === "number" ? `${total.toFixed(2)} kWh` : "读数据请求" },
+        { key: "time", label: "电能类型", value: String(result.metrics.energyType) },
+        { key: "method", label: "数据内容", value: String(result.metrics.readingMode) },
+        { key: "signals", label: "费率合计", value: hasRates ? `${Number(result.metrics.tariffSum).toFixed(2)} kWh` : "无分费率数据" },
+      ],
+      recommendation: hasRates ? "尖、峰、平、谷分别对应既有电表费率 1–4；使用其他型号时请核对其费率配置。" : "当前帧仅包含累计电量，未返回尖峰平谷数据。",
+    };
+  }
   if (result.protocolId === "joymeter-mbus") return buildJoymeterMbusSummary(result);
   if (result.protocolId === "cjt188-small") return buildCjt188Summary(result);
   if (result.protocolId === "wotman-big") return buildWotmanSummary(result);
