@@ -1,0 +1,47 @@
+/* 仅固定左侧输入尺寸；结果及业务内容自然展开，统一由整页滚动。 */
+:root {
+  scrollbar-gutter: stable;
+}
+.studio-page .editor-main textarea {
+  height: 300px;
+  min-height: 300px;
+  max-height: 300px;
+  resize: none;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.unified-command-layout .command-output textarea {
+  height: 180px;
+  min-height: 180px;
+  max-height: 180px;
+  overflow-y: auto;
+  resize: none;
+}
+@media (min-width: 1001px) {
+  .studio-page .workbench,
+  .studio-page .workbench.is-empty {
+    align-items: start;
+  }
+  .studio-page .workbench > .input-panel,
+  .studio-page .workbench.is-empty > .input-panel {
+    height: 640px;
+    min-height: 640px;
+  }
+  .studio-page .workbench > .result-panel,
+  .studio-page .workbench.is-empty > .result-panel {
+    height: auto;
+    min-height: 0;
+  }
+}
+@media (max-width: 1000px) {
+  .studio-page .workbench > .panel {
+    min-height: 0;
+  }
+}
+@media (max-width: 600px) {
+  .studio-page .editor-main textarea {
+    height: 240px;
+    min-height: 240px;
+    max-height: 240px;
+  }
+}

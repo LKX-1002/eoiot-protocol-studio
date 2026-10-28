@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { ProtocolStudio } from "../app/studio";
 import "../app/globals.css";
 import "../app/workbench-refinement.css";
+import "../app/visual-system.css";
+import "../app/workspace-sizing.css";
 
 // React 严格模式可以在开发阶段提前发现不安全的副作用和状态逻辑。
 createRoot(document.getElementById("root")!).render(

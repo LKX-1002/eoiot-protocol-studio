@@ -26,4 +26,3 @@ export function getWaterMeterType(code: number | undefined): WaterMeterType | nu
     reserved: !definedLabel,
   };
 }
-

@@ -4,7 +4,7 @@ import type { ParseResult, ProtocolParser } from "./types";
 
 export const joymeterCommandParser: ProtocolParser = {
   id: "joymeter-command",
-  name: "Joymeter 4G · 写入指令",
+  name: "小口径水表 · 4G · 写入指令",
   category: "water",
   status: "ready",
 
@@ -14,7 +14,9 @@ export const joymeterCommandParser: ProtocolParser = {
     if (bytes[start + 9] !== 0x24 && bytes[start + 9] !== 0xa4) return 0;
     const first = bytes[start + 11];
     const second = bytes[start + 12];
-    const supported = (first === 0xa1 && [0x71, 0x80, 0x81, 0x82, 0x83, 0x84].includes(second)) || (first === 0xa0 && second === 0x17);
+    const supported =
+      (first === 0xa1 && [0x71, 0x80, 0x81, 0x82, 0x83, 0x84].includes(second)) ||
+      (first === 0xa0 && second === 0x17);
     if (!supported) return 20;
     const declared = bytes[start + 10];
     const actual = bytes.length - start - 13;
@@ -30,23 +32,53 @@ export const joymeterCommandParser: ProtocolParser = {
     const definition = joymeterDefinition(parsed.kind);
     const diagnostics = checksumDiagnostics(bytes, findFrameStart(bytes));
     diagnostics.push(
-      { level: "ok", text: `控制码 ${parsed.controlCode}H、数据标识 ${parsed.dataIdentifier}H 与数据域长度一致。` },
-      { level: "ok", text: parsed.direction === "request" ? "Joymeter 下行写入参数已完整反向解析。" : "Joymeter A4H 写入应答已识别。" },
+      {
+        level: "ok",
+        text: `控制码 ${parsed.controlCode}H、数据标识 ${parsed.dataIdentifier}H 与数据域长度一致。`,
+      },
+      {
+        level: "ok",
+        text:
+          parsed.direction === "request"
+            ? "小口径水表 · 4G 下行写入参数已完整反向解析。"
+            : "小口径水表 · 4G A4H 写入应答已识别。",
+      },
     );
 
     const items = [
       { key: "meterNo", label: "设备编号", value: parsed.meterAddress },
       { key: "operation", label: "操作类型", value: definition.name },
-      { key: "direction", label: "报文方向", value: parsed.direction === "request" ? "平台下发" : "水表应答" },
-      ...Object.entries(parsed.metrics).map(([key, value]) => ({ key, label: ({ protocol: "通信协议", ip: "服务器 IP", port: "服务器端口", baseReading: "基表读数", valveAction: "阀门操作", startHour: "上报起始时间", maxRandomSeconds: "最大随机间隔", reportPeriodHours: "上报周期", status: "执行状态" } as Record<string, string>)[key] ?? key, value })),
+      {
+        key: "direction",
+        label: "报文方向",
+        value: parsed.direction === "request" ? "平台下发" : "水表应答",
+      },
+      ...Object.entries(parsed.metrics).map(([key, value]) => ({
+        key,
+        label:
+          (
+            {
+              protocol: "通信协议",
+              ip: "服务器 IP",
+              port: "服务器端口",
+              baseReading: "基表读数",
+              valveAction: "阀门操作",
+              startHour: "上报起始时间",
+              maxRandomSeconds: "最大随机间隔",
+              reportPeriodHours: "上报周期",
+              status: "执行状态",
+            } as Record<string, string>
+          )[key] ?? key,
+        value,
+      })),
     ];
 
     return {
-      protocol: `Joymeter 4G 写入指令 · ${definition.name}`,
+      protocol: `小口径水表 · 4G 写入指令 · ${definition.name}`,
       protocolId: this.id,
       category: "water",
-      categoryLabel: "Joymeter 4G 写入指令",
-      manufacturer: "Joymeter",
+      categoryLabel: "小口径水表 · 4G 写入指令",
+      manufacturer: "小口径水表 · 4G",
       confidence: this.detect(bytes),
       meterNo: parsed.meterAddress,
       controlCode: `${parsed.controlCode}H`,
@@ -54,7 +86,9 @@ export const joymeterCommandParser: ProtocolParser = {
       dataLength: bytes[findFrameStart(bytes) + 10],
       coreValue: parsed.summary,
       metrics: parsed.metrics,
-      overviewSections: [{ id: "command", title: parsed.direction === "request" ? "写入目标" : "执行应答", items }],
+      overviewSections: [
+        { id: "command", title: parsed.direction === "request" ? "写入目标" : "执行应答", items },
+      ],
       fields: parsed.fields,
       diagnostics,
       history: [],

@@ -1,6 +1,6 @@
 import { hexByte } from "./bytes";
 
-/** Joymeter 两字节水表状态字的逐位结果；状态字按低字节在前传输。 */
+/** 小口径水表 · 4G 两字节水表状态字的逐位结果；状态字按低字节在前传输。 */
 export interface JoymeterStatus {
   value: number;
   rawHex: string;
@@ -26,19 +26,20 @@ const ALARM_BITS = [
 ] as const;
 
 /**
- * 解析 Joymeter 状态 ST。bits 0–1 为阀门状态，bits 6–7 为保留位，
+ * 解析 小口径水表 · 4G 状态 ST。bits 0–1 为阀门状态，bits 6–7 为保留位，
  * 其余告警位严格按用户提供的状态字表解释。
  */
 export function parseJoymeterStatus(raw: number[]): JoymeterStatus {
   const value = (raw[0] ?? 0) | ((raw[1] ?? 0) << 8);
   const valveCode = value & 0x03;
-  const valveStatus = valveCode === 0
-    ? "开启"
-    : valveCode === 1
-      ? "关闭"
-      : valveCode === 3
-        ? "阀门异常"
-        : "保留状态（10B）";
+  const valveStatus =
+    valveCode === 0
+      ? "开启"
+      : valveCode === 1
+        ? "关闭"
+        : valveCode === 3
+          ? "阀门异常"
+          : "保留状态（10B）";
   const items = ALARM_BITS.map(({ bit, key, label }) => {
     const active = (value & (1 << bit)) !== 0;
     return { key, label, active, value: active ? "异常" : "正常" };

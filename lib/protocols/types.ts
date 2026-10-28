@@ -54,7 +54,7 @@ export interface OverviewSection {
 export interface ParseResult {
   protocol: string;
   protocolId: string;
-  category: "water" | "electric" | "gateway";
+  category: "water" | "electric" | "gateway" | "industrial";
   categoryLabel: string;
   manufacturer: string;
   confidence: number;
@@ -71,8 +71,30 @@ export interface ParseResult {
   rawBytes: number[];
 }
 
+export type ModbusDataType = "UINT16" | "INT16" | "UINT32" | "INT32" | "FLOAT32";
+export type ModbusByteOrder = "AB" | "BA" | "ABCD" | "CDAB" | "BADC" | "DCBA";
+export interface ModbusDecodeConfig {
+  /** 未设置时兼容旧记录的手动范围；all 按当前应答长度计算全部数据。 */
+  rangeMode?: "all" | "custom";
+  dataType: ModbusDataType;
+  byteOrder: ModbusByteOrder;
+  scale: number;
+  unit: string;
+  /** 相对于应答数据区，从 0 开始的寄存器位置，非实际寄存器地址。 */
+  registerOffset: number;
+  valueCount: number;
+  label: string;
+  decimals?: number;
+  model?: string;
+  /** 从读取请求或厂家文档填写的协议起始地址；应答自身不携带此值。 */
+  registerAddress?: number;
+}
+
 /** 用户可覆盖的解析参数。 */
 export interface ParseOptions {
+  modbusDecode?: ModbusDecodeConfig;
+  /** RTU 应答不携带寄存器地址，业务解码必须使用显式的设备规则。 */
+  modbusProfile?: "uint16-energy" | "raw";
   intEndian?: "auto" | "be" | "le";
   floatEndian?: "be" | "le";
   century?: string;
@@ -80,7 +102,7 @@ export interface ParseOptions {
 
 /**
  * 协议插件接口。
- * 新协议只需实现识别评分 detect 和实际解析 parse，再注册到 registry。
+ * 每个解析器必须实现 detect、validate、parse，再注册到 registry。
  */
 export interface ProtocolParser {
   id: string;

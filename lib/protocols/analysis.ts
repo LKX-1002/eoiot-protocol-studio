@@ -35,7 +35,10 @@ function flowText(result: ParseResult, key: string): string {
 }
 
 /** 按协议挑选实际存在的网络指标，避免所有水表都套用固定三项信号模板。 */
-function signalText(result: ParseResult, definitions: Array<{ key: string; label: string; unit?: string }>): string {
+function signalText(
+  result: ParseResult,
+  definitions: Array<{ key: string; label: string; unit?: string }>,
+): string {
   const parts = definitions.flatMap(({ key, label, unit }) => {
     const value = result.metrics[key];
     if (value === null || value === undefined || value === "" || value === "—") return [];
@@ -64,7 +67,7 @@ function buildCjt188Summary(result: ParseResult): AnalysisSummary {
         { key: "rsrq", label: "RSRQ" },
         { key: "rsrp", label: "RSRP" },
       ]),
-      note: "Joymeter 协议上报的 RSSI、RSRQ、RSRP 原始值",
+      note: "按协议解码后的信号值",
     },
   ];
   const level = resolveLevel(result, items);
@@ -73,9 +76,10 @@ function buildCjt188Summary(result: ParseResult): AnalysisSummary {
     level,
     statusLabel: level === "normal" ? "数据完整" : level === "abnormal" ? "解析异常" : "部分缺失",
     items,
-    recommendation: level === "normal"
-      ? "结合项目现场设定的信号阈值判断通信质量。"
-      : "补充完整主动上报报文后再次分析。",
+    recommendation:
+      level === "normal"
+        ? "结合项目现场设定的信号阈值判断通信质量。"
+        : "补充完整主动上报报文后再次分析。",
   };
 }
 
@@ -98,11 +102,14 @@ function buildJoymeterMbusSummary(result: ParseResult): AnalysisSummary {
     level,
     statusLabel: level === "normal" ? "数据完整" : level === "abnormal" ? "解析异常" : "部分缺失",
     items,
-    recommendation: level === "normal" ? "状态字已按 Joymeter 两字节位定义展开。" : "请检查累计量、时间或状态字段是否完整。",
+    recommendation:
+      level === "normal"
+        ? "状态字已按 小口径水表 · 4G 两字节位定义展开。"
+        : "请检查累计量、时间或状态字段是否完整。",
   };
 }
 
-/** 生成沃特曼大口径水表对应的四组核心上报信息。 */
+/** 生成大口径水表 · 4G大口径水表对应的四组核心上报信息。 */
 function buildWotmanSummary(result: ParseResult): AnalysisSummary {
   const items: AnalysisItem[] = [
     { key: "cumulative", label: "上报累积量", value: flowText(result, "forwardFlow") },
@@ -111,15 +118,8 @@ function buildWotmanSummary(result: ParseResult): AnalysisSummary {
     {
       key: "signals",
       label: "网络与信号",
-      value: signalText(result, [
-        { key: "csq", label: "CSQ" },
-        { key: "rsrp", label: "RSRP", unit: "dBm" },
-        { key: "rsrq", label: "RSRQ", unit: "dBm" },
-        { key: "snr", label: "SNR", unit: "dB" },
-        { key: "ecl", label: "ECL" },
-        { key: "pci", label: "PCI" },
-      ]),
-      note: "沃特曼协议提供的蜂窝网络参数",
+      value: signalText(result, [{ key: "csq", label: "CSQ" }]),
+      note: "蜂窝信号原始值",
     },
   ];
   const level = resolveLevel(result, items);
@@ -128,9 +128,10 @@ function buildWotmanSummary(result: ParseResult): AnalysisSummary {
     level,
     statusLabel: level === "normal" ? "数据完整" : level === "abnormal" ? "解析异常" : "部分缺失",
     items,
-    recommendation: level === "normal"
-      ? "结合项目现场阈值综合判断 CSQ、RSRP、RSRQ、SNR 与覆盖等级。"
-      : "当前报文未包含完整上报信息，建议结合字段解释进行人工确认。",
+    recommendation:
+      level === "normal"
+        ? "结合项目现场阈值判断 CSQ 信号质量。"
+        : "当前报文未包含完整上报信息，建议结合字段解释进行人工确认。",
   };
 }
 
@@ -153,25 +154,65 @@ function buildCommandSummary(result: ParseResult): AnalysisSummary {
 
 /** 协议分发入口；每种协议维护独立规则，避免前端混用字段。 */
 export function buildAnalysisSummary(result: ParseResult): AnalysisSummary {
+  if (result.protocolId === "modbus-rtu") {
+    const failed = result.metrics.exceptionCode !== null;
+    return {
+      title: "Modbus 数值解析",
+      level: failed ? "abnormal" : "normal",
+      statusLabel: failed ? "设备异常应答" : "CRC 校验通过",
+      items: [
+        {
+          key: "cumulative",
+          label: "解码原值",
+          value: result.metrics.rawValue === null ? "未解码" : String(result.metrics.rawValue),
+        },
+        {
+          key: "time",
+          label: "数据类型 / 字节序",
+          value: `${result.metrics.dataType} · ${result.metrics.byteOrder}`,
+        },
+        { key: "method", label: "报文用途", value: String(result.metrics.purpose) },
+        { key: "signals", label: "换算规则", value: String(result.metrics.profileName) },
+      ],
+      recommendation: failed
+        ? (result.diagnostics.find((item) => item.level === "bad")?.text ??
+          "请检查设备返回的异常码。")
+        : "应答不包含寄存器地址；数值含义由所选数据类型、字节序、缩放因子和单位决定，请对应实际读取请求。",
+    };
+  }
   if (result.protocolId === "dlt645-energy") {
-    const total = result.metrics.totalEnergy;
-    const hasRates = typeof result.metrics.tipEnergy === "number";
+    const total = result.metrics.readingEnergy ?? result.metrics.totalEnergy;
+    const hasRates = typeof result.metrics.tariffSum === "number";
+    const rate = result.metrics.rate;
     const warning = result.diagnostics.some((item) => item.level === "warn");
     return {
-      title: "电量解析", level: warning ? "attention" : "normal", statusLabel: warning ? "需复核" : "校验通过",
+      title: "电量解析",
+      level: warning ? "attention" : "normal",
+      statusLabel: warning ? "需复核" : "校验通过",
       items: [
-        { key: "cumulative", label: "累计用量", value: typeof total === "number" ? `${total.toFixed(2)} kWh` : "读数据请求" },
+        {
+          key: "cumulative",
+          label: typeof rate === "number" && rate > 0 ? `费率 ${rate} 电量` : "累计用量",
+          value: typeof total === "number" ? `${total.toFixed(2)} kWh` : "读数据请求",
+        },
         { key: "time", label: "电能类型", value: String(result.metrics.energyType) },
         { key: "method", label: "数据内容", value: String(result.metrics.readingMode) },
-        { key: "signals", label: "费率合计", value: hasRates ? `${Number(result.metrics.tariffSum).toFixed(2)} kWh` : "无分费率数据" },
+        {
+          key: "signals",
+          label: "费率合计",
+          value: hasRates ? `${Number(result.metrics.tariffSum).toFixed(2)} kWh` : "无分费率数据",
+        },
       ],
-      recommendation: hasRates ? "尖、峰、平、谷分别对应既有电表费率 1–4；使用其他型号时请核对其费率配置。" : "当前帧仅包含累计电量，未返回尖峰平谷数据。",
+      recommendation: hasRates
+        ? "尖、峰、平、谷分别对应既有电表费率 1–4；使用其他型号时请核对其费率配置。"
+        : "当前帧返回单项电量或读取请求，未包含完整费率数据块。",
     };
   }
   if (result.protocolId === "joymeter-mbus") return buildJoymeterMbusSummary(result);
   if (result.protocolId === "cjt188-small") return buildCjt188Summary(result);
   if (result.protocolId === "wotman-big") return buildWotmanSummary(result);
-  if (result.protocolId === "joymeter-command" || result.protocolId === "wotman-command") return buildCommandSummary(result);
+  if (result.protocolId === "joymeter-command" || result.protocolId === "wotman-command")
+    return buildCommandSummary(result);
 
   const items: AnalysisItem[] = [
     { key: "cumulative", label: "上报累积量", value: "报文未提供" },

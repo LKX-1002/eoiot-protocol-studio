@@ -5,9 +5,7 @@ import type { Diagnostic, ParsedField } from "./types";
  * 同时支持连续 HEX、两位一组 HEX、0x 前缀，以及空格/换行/逗号等分隔符。
  */
 export function parseHex(input: string): number[] {
-  const compact = input
-    .replace(/0x/gi, "")
-    .replace(/[，,;；:_\-\s]+/g, "");
+  const compact = input.replace(/0x/gi, "").replace(/[，,;；:_\-\s]+/g, "");
   if (!compact) return [];
   const invalid = compact.match(/[^0-9a-fA-F]/);
   if (invalid) {
@@ -69,9 +67,13 @@ export function validateFrameEnvelope(bytes: number[], start: number): void {
 
   const checksumOffset = bytes.length - 2;
   const expected = bytes[checksumOffset];
-  const calculated = bytes.slice(start, checksumOffset).reduce((sum, value) => (sum + value) & 0xff, 0);
+  const calculated = bytes
+    .slice(start, checksumOffset)
+    .reduce((sum, value) => (sum + value) & 0xff, 0);
   if (expected !== calculated) {
-    throw new Error(`校验和错误：帧内 CS 为 ${hexByte(expected)}，正确值应为 ${hexByte(calculated)}。`);
+    throw new Error(
+      `校验和错误：帧内 CS 为 ${hexByte(expected)}，正确值应为 ${hexByte(calculated)}。`,
+    );
   }
 }
 
@@ -140,7 +142,10 @@ export function checksumDiagnostics(bytes: number[], start: number): Diagnostic[
     result.push(
       expected === calculated
         ? { level: "ok", text: `CS 校验正确（${hexByte(expected)}）。` }
-        : { level: "warn", text: `CS 校验不一致：帧内 ${hexByte(expected)}，计算值 ${hexByte(calculated)}。` },
+        : {
+            level: "warn",
+            text: `CS 校验不一致：帧内 ${hexByte(expected)}，计算值 ${hexByte(calculated)}。`,
+          },
     );
   }
   return result;
